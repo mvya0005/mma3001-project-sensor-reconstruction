@@ -56,6 +56,14 @@ accepted.
 6. **Optimistic claims in draft text.** Several draft conclusions (e.g.
    "averaging anchors clearly helps short gaps", "the profile halves the
    error") were not supported by the executed numbers and were rewritten.
+7. **Conclusions written before the test run.** The final recommendation in
+   notebook 06 was drafted from validation results ("use the ridge correction
+   for long gaps"). The test period contradicted it: the validated hybrid was
+   no better than linear interpolation there. The text was rewritten from the
+   test numbers, and the distribution shift that caused it is analysed in
+   notebook 06 §2. Every other notebook's conclusions were also re-checked
+   against the executed outputs, and several overstated claims were corrected
+   (e.g. the ODE fill is not better than linear for gaps of 6 h or less).
 
 ## 4. Student reflection (to be written by the student)
 
