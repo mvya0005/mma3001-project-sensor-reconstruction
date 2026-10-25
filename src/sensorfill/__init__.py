@@ -17,15 +17,18 @@ Modules
 - :mod:`sensorfill.metrics` - error metrics on hidden points.
 - :mod:`sensorfill.profiling` - timing, memory, cProfile and roofline helpers.
 - :mod:`sensorfill.benchmark` - one harness that scores every method on identical gaps.
+- :mod:`sensorfill.plotting` - colour-blind-checked figure style.
+- :mod:`sensorfill.study` - sensors, chronological splits and occupancy proxy used by all notebooks.
 
 ``sensorfill.deep`` is imported lazily because PyTorch is optional.
 """
 
 __version__ = "1.0.0"
 
-from . import benchmark, data, features, interpolation, linalg, masking, metrics, ml, ode, pde, profiling, quadrature
+from . import benchmark, data, features, interpolation, linalg, masking, metrics, ml, ode, pde, profiling, quadrature, study
 
 __all__ = [
     "benchmark", "data", "features", "interpolation", "linalg", "masking",
-    "metrics", "ml", "ode", "pde", "profiling", "quadrature",
+    "metrics", "ml", "ode", "pde", "profiling", "quadrature", "study", "plotting",
+    "deep",  # listed for the documentation; imported on demand because PyTorch is optional
 ]
