@@ -1,0 +1,24 @@
+# Raw and processed data are not redistributed (Monash data; see data/README.md)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+build/
+dist/
+
+# Model checkpoints and large outputs
+*.pt
+*.ckpt
+reports/*.parquet
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/

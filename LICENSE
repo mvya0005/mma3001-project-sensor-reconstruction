@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 mvya0005
+Copyright (c) 2026 Malay (GitHub: mvya0005)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+The licence covers the source code and documentation in this repository only.
+The Monash Smart Infrastructure sensor data is NOT included and is not covered
+by this licence; it remains the property of Monash University and is used under
+the terms provided for the MMA3001 unit.
