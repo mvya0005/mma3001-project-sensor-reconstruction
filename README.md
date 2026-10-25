@@ -14,11 +14,11 @@ Wireless indoor-air sensors drop readings, from single lost packets to multi-day
 | Hybrid policy chosen on validation (linear ≤ 3 h, ridge above) | 8.3 ± 2.0 | 11.0 ± 1.4 | 12.0 ± 1.3 | 16.7 ± 2.0 | 19.4 ± 1.0 | 25.9 ± 2.1 |
 | Daily profile + offset | 9.1 ± 2.3 | 11.7 ± 1.3 | 13.6 ± 1.5 | 18.8 ± 1.4 | 22.8 ± 1.4 | 32.9 ± 3.8 |
 | ODE grey box (shooting) | 8.3 ± 2.0 | 10.9 ± 1.3 | 12.7 ± 1.7 | 17.2 ± 1.4 | 22.5 ± 2.6 | 25.8 ± 4.4 |
-| BiGRU (CPU quick mode) | 8.4 ± 1.6 | 11.0 ± 1.8 | 11.9 ± 1.6 | 15.7 ± 1.4 | 17.0 ± 1.7 | 20.8 ± 1.6 |
+| BiGRU (trained on a Colab T4 GPU) | 8.6 ± 1.6 | 11.3 ± 1.9 | 12.2 ± 1.8 | 16.0 ± 1.3 | 18.2 ± 1.3 | 21.4 ± 1.8 |
 
 * **Short gaps (up to about 6 h):** linear interpolation is as good as anything tested, close to the ≈ 8.5 ppm sensor-noise floor, and costs about 0.1 ms per series.
 * **The validation-selected hybrid failed on test.** On validation the ridge correction cut the 24-h error from 49 to 31 ppm. On the calmer end-of-semester test period it over-predicts and is no better than linear. Methods built on the training period's daily schedule (profile, ridge) did not transfer. This is analysed in notebook 06 §2.
-* **Long gaps (12–24 h):** only the BiGRU beat linear on both validation and test (24 h: 20.8 vs 24.3 ppm), even under-trained on a CPU. The full GPU run in notebook 05 is needed to confirm it.
+* **Long gaps (12–24 h):** only the BiGRU beat linear on both validation and test (24 h on test: 21.4 vs 24.3 ppm, about 12 % lower, with intervals that just overlap). Longer GPU training did not improve it, because it over-fits the 9 weeks of training data after one or two epochs. More data, not more compute, is the limit.
 * **Temperature:** the day-coupled Laplace fill cuts the 24-h error from 1.4 to 0.6 °C.
 * **Engineering indicator:** with a 6-h working-hours gap, even the best fill misstates a day's CO₂ dose by up to 15–20 % (RMS 7–8 %).
 * **Verification:** 87 tests pass, including convergence orders, stability limits and analytical solutions ([test report](reports/tests/test_report.html)).
