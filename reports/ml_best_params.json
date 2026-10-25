@@ -1,0 +1,27 @@
+{
+ "linear": {
+  "fit_intercept": true
+ },
+ "ridge": {
+  "alpha": 100
+ },
+ "tree": {
+  "max_depth": 6,
+  "min_samples_leaf": 50
+ },
+ "forest": {
+  "max_depth": null,
+  "min_samples_leaf": 2
+ },
+ "svr": {
+  "C": 10,
+  "epsilon": 0.5,
+  "gamma": 0.05
+ },
+ "mlp": {
+  "alpha": 0.01,
+  "hidden_layer_sizes": [
+   32
+  ]
+ }
+}
