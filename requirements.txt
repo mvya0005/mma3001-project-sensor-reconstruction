@@ -1,0 +1,16 @@
+# Runtime dependencies (also declared in pyproject.toml). Colab already provides all of these.
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+scikit-learn>=1.3
+matplotlib>=3.7
+pyarrow>=12
+openpyxl>=3.1
+torch>=2.1          # notebook 05 and sensorfill.deep only
+# Development / documentation
+pytest>=7
+pytest-html>=4
+pdoc>=14
+nbformat>=5
+nbclient>=0.8
+ipykernel
