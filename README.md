@@ -4,7 +4,26 @@
 
 Wireless indoor-air sensors drop readings, from single lost packets to multi-day outages. This project builds and validates a library, `sensorfill`, and a set of Colab notebooks that reconstruct missing 10-minute CO₂ and temperature readings. It compares classical numerical methods, a physics-based (mass-balance ODE) model, and machine-learning and deep-learning models on identical, withheld ground truth. The result is an evidence-based policy for which method a building management system should use for each gap length.
 
-<!-- RESULTS -->
+## Key results (test period, 22 May – 14 Jun 2024, sensor `…869`)
+
+![Test RMSE vs gap length](reports/figures/06_test_rmse.png)
+
+| CO₂ RMSE on hidden points [ppm], mean ± 95 % CI | 10 min | 1 h | 3 h | 6 h | 12 h | 24 h |
+|---|---|---|---|---|---|---|
+| Linear interpolation (baseline) | 8.3 ± 2.0 | 11.0 ± 1.4 | 12.0 ± 1.3 | 15.0 ± 1.5 | 18.9 ± 1.8 | 24.3 ± 1.4 |
+| Hybrid policy chosen on validation (linear ≤ 3 h, ridge above) | 8.3 ± 2.0 | 11.0 ± 1.4 | 12.0 ± 1.3 | 16.7 ± 2.0 | 19.4 ± 1.0 | 25.9 ± 2.1 |
+| Daily profile + offset | 9.1 ± 2.3 | 11.7 ± 1.3 | 13.6 ± 1.5 | 18.8 ± 1.4 | 22.8 ± 1.4 | 32.9 ± 3.8 |
+| ODE grey box (shooting) | 8.3 ± 2.0 | 10.9 ± 1.3 | 12.7 ± 1.7 | 17.2 ± 1.4 | 22.5 ± 2.6 | 25.8 ± 4.4 |
+| BiGRU (CPU quick mode) | 8.4 ± 1.6 | 11.0 ± 1.8 | 11.9 ± 1.6 | 15.7 ± 1.4 | 17.0 ± 1.7 | 20.8 ± 1.6 |
+
+* **Short gaps (up to about 6 h):** linear interpolation is as good as anything tested, close to the ≈ 8.5 ppm sensor-noise floor, and costs about 0.1 ms per series.
+* **The validation-selected hybrid failed on test.** On validation the ridge correction cut the 24-h error from 49 to 31 ppm. On the calmer end-of-semester test period it over-predicts and is no better than linear. Methods built on the training period's daily schedule (profile, ridge) did not transfer. This is analysed in notebook 06 §2.
+* **Long gaps (12–24 h):** only the BiGRU beat linear on both validation and test (24 h: 20.8 vs 24.3 ppm), even under-trained on a CPU. The full GPU run in notebook 05 is needed to confirm it.
+* **Temperature:** the day-coupled Laplace fill cuts the 24-h error from 1.4 to 0.6 °C.
+* **Engineering indicator:** with a 6-h working-hours gap, even the best fill misstates a day's CO₂ dose by up to 15–20 % (RMS 7–8 %).
+* **Verification:** 87 tests pass, including convergence orders, stability limits and analytical solutions ([test report](reports/tests/test_report.html)).
+
+Full tables: `reports/test_results.csv` and notebook 06.
 
 ---
 
@@ -14,7 +33,7 @@ Wireless indoor-air sensors drop readings, from single lost packets to multi-day
 |---|---|
 | **Context** | Building services (HVAC) is a branch of mechanical engineering. Building management systems (BMS) use indoor CO₂ and temperature for demand-controlled ventilation, indoor-air-quality compliance and energy reporting. Gaps break control loops and bias daily indicators. |
 | **Problem** | Given a regularly sampled sensor series with gaps (and optionally building occupancy), estimate the missing values and quantify the error as a function of gap length. |
-| **Why it matters** | A daily ventilation indicator such as the CO₂ dose ∫(C − 420 ppm)dt is biased whenever a gap falls in working hours. Naive filling (hold-last-value) misstates it by tens of percent. |
+| **Why it matters** | A daily ventilation indicator such as the CO₂ dose ∫(C − 420 ppm)dt is biased whenever a gap falls in working hours. A single 6-hour gap shifts a day's dose by up to 15–20 % even with the best fill tested (notebook 06 §3). |
 | **Intended use** | Offline cleaning of logged data before computing daily indicators. Methods may use data after a gap. A real-time variant (forward IVP) is also provided. |
 | **Scope / limits** | Gaps from 10 min to 24 h. Longer outages are flagged, not filled. One building (two sensors, two periods). The occupancy sensors are not co-located with the CO₂ sensor, so occupancy is used as a building-activity proxy. |
 
@@ -100,7 +119,7 @@ Everything is seeded (mask draws, model initialisation, data augmentation), so r
 
 * **Ground truth by withholding.** Observed readings are hidden in blocks of 10 min to 24 h and reconstructed. Only the hidden points are scored. Masks keep observed margins, so every method has the same boundary information.
 * **Chronological split, no leakage.** Train 29 Feb – 30 Apr 2024, validation 1–21 May, test 22 May – 14 Jun. Profiles, scalers, feature references and occupancy-proxy selection use training data only. All model choices are made on validation. The test period is used once, in notebook 06.
-* **Repeatability.** 5 independent mask draws give 95 % confidence intervals. The deep models are trained over 3 seeds.
+* **Repeatability.** 5 independent mask draws give 95 % confidence intervals. The deep models are trained over 3 seeds in the full GPU run (1 seed in the CPU quick mode).
 * **Verification of the numerics.** Analytical solutions and convergence orders (`tests/`), physical plausibility of fitted parameters, and stability limits measured against theory.
 * **Engineering validation.** The error in the daily CO₂ dose, an integrated indicator, not only point-wise RMSE.
 * **External check.** A second sensor in a different room and year, never used for any choice.

@@ -83,7 +83,7 @@ complete. Use this as a checklist before submitting.
 - Unsupported inputs and failure modes: the nb 06 failure-mode table; edge
   gaps flagged; outages above 24 h flagged, not filled.
 - Honest limitations: README §6 "What it cannot establish"; negative results
-  are kept (SVD, high-order Newton, PINN at short gaps, ML ≈ profile).
+  are kept (SVD, high-order Newton, the physics-informed loss, ML ≈ profile on validation), and the biggest one is analysed openly: the hybrid policy selected on validation failed on the test period because of a schedule shift (nb 06 §2).
 
 ### Justification of computational approach
 - Clear baseline (linear interpolation; LOCF as the naive one).
