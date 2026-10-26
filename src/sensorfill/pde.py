@@ -24,6 +24,12 @@ Jacobi, Gauss-Seidel, SOR or a sparse direct solve. ``diffusion_fill``
 marches the parabolic problem ``u_t = L u`` with FTCS (explicit, conditionally
 stable) or Crank-Nicolson (implicit, unconditionally stable) and shows how the
 steady state of diffusion is the Laplace solution.
+
+Example:
+    >>> import numpy as np
+    >>> from sensorfill.pde import laplace_fill
+    >>> laplace_fill([0.0, np.nan, np.nan, 3.0], method="direct")  # 1-D Laplace = linear
+    array([0., 1., 2., 3.])
 """
 
 from __future__ import annotations
@@ -45,6 +51,12 @@ def graph_laplacian(n: int, steps_per_day: int | None = None, w_day: float = 1.0
 
     Returns:
         Sparse ``n x n`` matrix with ``(L y)_i = sum_j w_ij (y_j - y_i)``.
+
+    Example:
+        >>> graph_laplacian(3).toarray()
+        array([[-1.,  1.,  0.],
+               [ 1., -2.,  1.],
+               [ 0.,  1., -1.]])
     """
     rows, cols, vals = [], [], []
     i = np.arange(n - 1)
@@ -79,6 +91,12 @@ class SolveInfo:
 
 
 def _split(y):
+    """Return a float copy of ``y`` and its missing-value mask.
+
+    Raises:
+        ValueError: If ``y`` has no observed or no missing points (the
+            boundary-value problem would have no boundary or no unknowns).
+    """
     y = np.array(y, dtype=float, copy=True)
     miss = np.isnan(y)
     if miss.all() or not miss.any():
@@ -110,16 +128,30 @@ def laplace_fill(
         return_info: Also return a :class:`SolveInfo`.
 
     Returns:
-        Filled copy of ``y`` (and the :class:`SolveInfo` if requested).
+        Filled copy of ``y`` (and the :class:`SolveInfo` if requested). If
+        ``max_iter`` is reached first, the latest iterate is returned and
+        ``info.converged`` is False.
+
+    Raises:
+        ValueError: If ``y`` has no observed or no missing points, or
+            ``method``/``omega`` is invalid.
 
     Notes:
         Gaps at the ends of the series have a boundary condition on one side
         only; the discrete solution there is constant (zero-flux / Neumann at
         the open end), equivalent to holding the last observed value.
+
+    Example:
+        >>> y = [0.0, np.nan, np.nan, np.nan, 4.0]
+        >>> filled, info = laplace_fill(y, method="gs", tol=1e-10, return_info=True)
+        >>> np.round(filled, 6), info.converged
+        (array([0., 1., 2., 3., 4.]), True)
     """
     y, miss = _split(y)
     L = graph_laplacian(y.size, steps_per_day, w_day)
     unk = np.flatnonzero(miss)
+    # Partition L u = 0 into unknown (gap) and known (observed) parts:
+    # L_uu u = -L_uk y_k, i.e. observed neighbours act as Dirichlet data.
     A = L[unk][:, unk].tocsr()
     b = -(L[unk][:, ~miss] @ y[~miss])
     scale = np.nanmax(y) - np.nanmin(y) or 1.0
@@ -133,21 +165,22 @@ def laplace_fill(
         diag = A.diagonal()
         off = A - sp.diags(diag)
         if method == "jacobi":
-            for k in range(max_iter):
+            for it in range(1, max_iter + 1):
+                # Jacobi: every unknown is updated from the *previous* iterate.
                 new = (b - off @ u) / diag
                 r = np.max(np.abs(new - u))
                 u = new
                 info.residuals.append(r)
+                info.iterations = it
                 if r < tol * scale:
                     info.converged = True
                     break
-            info.iterations = k + 1
         elif method in ("gs", "sor"):
             w = 1.0 if method == "gs" else (1.9 if omega is None else omega)
             if not 0 < w < 2:
                 raise ValueError("SOR requires 0 < omega < 2 for convergence")
             indptr, indices, data = off.indptr, off.indices, off.data
-            for k in range(max_iter):
+            for it in range(1, max_iter + 1):
                 r = 0.0
                 for i in range(unk.size):  # in-place sweep uses freshest values
                     s = b[i]
@@ -157,10 +190,10 @@ def laplace_fill(
                     r = max(r, abs(new - u[i]))
                     u[i] = new
                 info.residuals.append(r)
+                info.iterations = it
                 if r < tol * scale:
                     info.converged = True
                     break
-            info.iterations = k + 1
         else:
             raise ValueError(f"unknown method {method!r}")
     y[unk] = u
@@ -172,6 +205,16 @@ def optimal_sor_omega(gap_len: int) -> float:
 
     For the 1-D Dirichlet Laplacian the Jacobi spectral radius is
     ``rho = cos(pi / (m + 1))`` and ``omega* = 2 / (1 + sqrt(1 - rho^2))``.
+
+    Args:
+        gap_len: Number of unknowns ``m`` in the gap.
+
+    Returns:
+        The optimal relaxation factor, in ``[1, 2)``; it tends to 2 as gaps grow.
+
+    Example:
+        >>> round(float(optimal_sor_omega(1)), 6), round(float(optimal_sor_omega(144)), 3)
+        (1.0, 1.958)
     """
     rho = np.cos(np.pi / (gap_len + 1))
     return 2.0 / (1.0 + np.sqrt(1.0 - rho**2))
@@ -183,6 +226,17 @@ def ftcs_stability_limit(steps_per_day: int | None = None, w_day: float = 1.0) -
     Gershgorin bounds the Laplacian eigenvalues by ``2 * max_degree``; FTCS
     (forward Euler in pseudo-time) is stable when ``r * |lambda_max| <= 2``,
     i.e. ``r <= 1 / max_degree``. For the 1-D chain this is the classical 0.5.
+
+    Args:
+        steps_per_day: If given, the Laplacian includes day coupling.
+        w_day: Day-coupling weight.
+
+    Returns:
+        The largest stable non-dimensional step ``r``.
+
+    Example:
+        >>> ftcs_stability_limit(), ftcs_stability_limit(steps_per_day=144)
+        (0.5, 0.25)
     """
     max_deg = 2.0 + (2.0 * w_day if steps_per_day else 0.0)
     return 1.0 / max_deg
@@ -209,7 +263,8 @@ def diffusion_fill(
         r: Non-dimensional step ``D dt / dx^2``.
         scheme: ``"ftcs"`` (explicit) or ``"cn"`` (Crank-Nicolson, implicit).
         n_steps: Maximum pseudo-time steps.
-        steps_per_day, w_day: Laplacian coupling (see :func:`graph_laplacian`).
+        steps_per_day: Enables day coupling (see :func:`graph_laplacian`).
+        w_day: Day-coupling weight.
         tol: Stop when the max update per step is below ``tol * range(y)``.
         return_info: Also return a :class:`SolveInfo`.
 
@@ -217,6 +272,18 @@ def diffusion_fill(
         Filled copy of ``y`` (and info). With FTCS and ``r`` above
         :func:`ftcs_stability_limit` the iteration diverges; the info then has
         ``converged=False`` and growing residuals.
+
+    Raises:
+        ValueError: If ``y`` has no observed or no missing points, or
+            ``scheme`` is unknown.
+
+    Example:
+        >>> y = [0.0, np.nan, np.nan, 3.0]
+        >>> np.round(diffusion_fill(y, r=0.4, tol=1e-12), 6)  # stable: reaches Laplace
+        array([0., 1., 2., 3.])
+        >>> _, info = diffusion_fill(y, r=1.2, n_steps=200, return_info=True)  # r > 0.5
+        >>> info.converged
+        False
     """
     y, miss = _split(y)
     L = graph_laplacian(y.size, steps_per_day, w_day)
@@ -227,12 +294,14 @@ def diffusion_fill(
     scale = np.nanmax(y) - np.nanmin(y) or 1.0
     info = SolveInfo(scheme, 0, False)
     if scheme == "cn":
-        I = sp.identity(unk.size, format="csc")
-        lu = spla.splu((I - 0.5 * r * A).tocsc())
-        B = (I + 0.5 * r * A).tocsr()
+        eye = sp.identity(unk.size, format="csc")
+        # Crank-Nicolson: (I - r/2 A) u^{n+1} = (I + r/2 A) u^n + r b. The left
+        # matrix is constant, so it is LU-factorised once and reused every step.
+        lu = spla.splu((eye - 0.5 * r * A).tocsc())
+        B = (eye + 0.5 * r * A).tocsr()
     elif scheme != "ftcs":
         raise ValueError("scheme must be 'ftcs' or 'cn'")
-    for k in range(n_steps):
+    for it in range(1, n_steps + 1):
         if scheme == "ftcs":
             new = u + r * (A @ u + b)
         else:
@@ -240,11 +309,11 @@ def diffusion_fill(
         d = np.max(np.abs(new - u))
         u = new
         info.residuals.append(d)
+        info.iterations = it
         if not np.isfinite(d) or d > 1e6 * scale:
             break  # diverged (unstable explicit step)
         if d < tol * scale:
             info.converged = True
             break
-    info.iterations = k + 1
     y[unk] = u
     return (y, info) if return_info else y

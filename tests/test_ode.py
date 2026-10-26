@@ -7,6 +7,7 @@ from sensorfill import ode
 
 
 def test_finite_difference_orders():
+    """Forward differences converge at order 1 and central differences at order 2."""
     errs = {s: [] for s in ("forward", "central")}
     for h in (0.1, 0.05, 0.025):
         x = np.arange(0, 2, h)
@@ -20,6 +21,7 @@ def test_finite_difference_orders():
 
 
 def test_second_difference():
+    """The central second difference is exact for x^2."""
     x = np.linspace(0, 1, 101)
     d2 = ode.second_difference(x**2, x[1] - x[0])
     np.testing.assert_allclose(d2[1:-1], 2.0)
@@ -29,9 +31,11 @@ def test_second_difference():
 def test_integrators_converge_at_theoretical_order(method):
     """Empirical order on y' = -2y + sin(t), compared with the exact solution."""
     def f(t, y):
+        """Right-hand side of the test ODE."""
         return -2 * y + np.sin(t)
 
     def exact(t):
+        """Closed-form solution of the test ODE."""
         return (2 * np.sin(t) - np.cos(t)) / 5 + (1 + 1 / 5) * np.exp(-2 * t)
 
     errs = []
@@ -44,6 +48,7 @@ def test_integrators_converge_at_theoretical_order(method):
 
 
 def test_explicit_euler_unstable_implicit_stable_on_stiff_problem():
+    """With h*lambda = 2.5 explicit Euler blows up and implicit Euler stays stable, as |R(z)| predicts."""
     lam = 50.0
     t = np.linspace(0, 1, 21)  # h*lam = 2.5 > 2: outside explicit Euler's stability region
     f = lambda t, y: -lam * y
@@ -55,6 +60,7 @@ def test_explicit_euler_unstable_implicit_stable_on_stiff_problem():
 
 
 def _synthetic_co2(p, hours=48, h=1 / 6):
+    """Two-day synthetic CO2 series with a 9-17 h occupancy schedule, from the exact solution."""
     t = np.arange(0, hours, h)
     occ = np.where((t % 24 > 9) & (t % 24 < 17), 12.0, 0.0)
     C = ode.simulate_co2(p, t, occ, 420.0, "exact_linear")
@@ -62,6 +68,7 @@ def _synthetic_co2(p, hours=48, h=1 / 6):
 
 
 def test_rk4_matches_exact_discretisation():
+    """RK4 at 10-min steps matches the exact discretisation to well below sensor noise."""
     p = ode.CO2Params(g=5.0, lam=1.5, c_out=420.0)
     t, occ, C = _synthetic_co2(p)
     C_rk4 = ode.simulate_co2(p, t, occ, 420.0, "rk4")
@@ -70,6 +77,7 @@ def test_rk4_matches_exact_discretisation():
 
 
 def test_steady_state_is_physical():
+    """Constant occupancy drives CO2 to the analytical steady state C_out + gN/lambda."""
     p = ode.CO2Params(g=5.0, lam=1.0, c_out=420.0)
     t = np.arange(0, 20, 0.1)
     C = ode.simulate_co2(p, t, np.full(t.size, 10.0), 420.0, "rk4")
@@ -77,6 +85,7 @@ def test_steady_state_is_physical():
 
 
 def test_parameter_recovery():
+    """Equation-error gives a close start and output-error recovers the true parameters."""
     p = ode.CO2Params(g=4.0, lam=0.8, c_out=410.0)
     t, occ, C = _synthetic_co2(p, hours=96)
     p0 = ode.fit_equation_error(C, occ, t[1] - t[0])
@@ -88,11 +97,13 @@ def test_parameter_recovery():
 
 
 def test_secant_root():
+    """The secant method finds sqrt(2) in under 10 iterations."""
     r, k = ode.secant(lambda x: x**2 - 2, 1.0, 2.0)
     assert r == pytest.approx(np.sqrt(2)) and k < 10
 
 
 def test_shooting_fill_matches_both_ends_and_truth():
+    """Shooting and IVP fills match the true trajectory; shooting converges in at most 2 steps."""
     p = ode.CO2Params(g=5.0, lam=1.0, c_out=420.0)
     t, occ, C = _synthetic_co2(p)
     y = C.copy()
@@ -106,5 +117,6 @@ def test_shooting_fill_matches_both_ends_and_truth():
 
 
 def test_unknown_method_raises():
+    """An unknown integrator name is rejected."""
     with pytest.raises(ValueError):
         ode.integrate(lambda t, y: y, 1.0, np.linspace(0, 1, 3), "magic")

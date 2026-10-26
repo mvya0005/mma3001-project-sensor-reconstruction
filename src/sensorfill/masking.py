@@ -45,7 +45,14 @@ def block_mask(
         observed.
 
     Raises:
-        ValueError: If ``gap_len < 1`` or fewer than ``n_gaps`` blocks fit.
+        ValueError: If ``gap_len < 1``, the series is shorter than one block
+            plus margins, or fewer than ``n_gaps`` blocks fit.
+
+    Example:
+        >>> import numpy as np
+        >>> m = block_mask(np.ones(50, dtype=bool), gap_len=5, n_gaps=3, rng=0)
+        >>> int(m.sum()), describe_mask(m)["n_gaps"]
+        (15, 3)
     """
     if gap_len < 1:
         raise ValueError("gap_len must be >= 1")
@@ -91,7 +98,16 @@ def random_point_mask(observed: np.ndarray, frac: float, rng=None) -> np.ndarray
         rng: Seed or generator.
 
     Returns:
-        Boolean hide mask.
+        Boolean hide mask with ``round(frac * observed.sum())`` True entries,
+        all at observed points.
+
+    Raises:
+        ValueError: If ``frac`` is not strictly between 0 and 1.
+
+    Example:
+        >>> import numpy as np
+        >>> int(random_point_mask(np.ones(100, dtype=bool), 0.2, rng=1).sum())
+        20
     """
     if not 0 < frac < 1:
         raise ValueError("frac must be in (0, 1)")
@@ -117,7 +133,17 @@ def empirical_mask(observed: np.ndarray, real_gaps: np.ndarray, n_gaps: int, rng
         cap: Optional maximum gap length to draw.
 
     Returns:
-        Boolean hide mask.
+        Boolean hide mask containing ``n_gaps`` separate blocks that never
+        touch each other.
+
+    Raises:
+        ValueError: If a drawn gap cannot be placed (see :func:`block_mask`).
+
+    Example:
+        >>> import numpy as np
+        >>> m = empirical_mask(np.ones(200, dtype=bool), np.array([2, 3, 4]), n_gaps=4, rng=0)
+        >>> describe_mask(m)["n_gaps"]
+        4
     """
     rng = np.random.default_rng(rng)
     real_gaps = np.asarray(real_gaps)
@@ -136,13 +162,38 @@ def empirical_mask(observed: np.ndarray, real_gaps: np.ndarray, n_gaps: int, rng
 
 
 def apply_mask(y: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Return a copy of ``y`` with ``mask`` positions set to NaN."""
+    """Return a copy of ``y`` with ``mask`` positions set to NaN.
+
+    Args:
+        y: The complete series.
+        mask: Boolean hide mask, same length as ``y``.
+
+    Returns:
+        A new float array; ``y`` itself is not modified.
+
+    Example:
+        >>> apply_mask([1.0, 2.0, 3.0], [False, True, False])
+        array([ 1., nan,  3.])
+    """
     out = np.array(y, dtype=float, copy=True)
     out[mask] = np.nan
     return out
 
 
 def describe_mask(mask: np.ndarray) -> dict:
-    """Small summary of a hide mask (number of gaps, total and mean length)."""
+    """Summarise a hide mask.
+
+    Args:
+        mask: Boolean hide mask.
+
+    Returns:
+        Dict with ``n_gaps`` (number of contiguous blocks), ``n_hidden``
+        (total hidden points) and ``mean_len`` (mean block length).
+
+    Example:
+        >>> import numpy as np
+        >>> describe_mask(np.array([0, 1, 1, 0, 1, 0], dtype=bool))
+        {'n_gaps': 2, 'n_hidden': 3, 'mean_len': 1.5}
+    """
     g = gap_lengths(mask)
     return {"n_gaps": int(g.size), "n_hidden": int(mask.sum()), "mean_len": float(g.mean()) if g.size else 0.0}

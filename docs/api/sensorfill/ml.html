@@ -125,6 +125,17 @@ from gap-aware features (<code><a href="features.html">sensorfill.features</a></
 <p>Hyperparameters are selected by grouped K-fold cross-validation in which all
 rows from one gap stay in the same fold (rows inside a gap are strongly
 correlated; splitting them would leak information and overstate skill).</p>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn"><a href="">sensorfill.ml</a></span><span class="w"> </span><span class="kn">import</span> <span class="n">make_model</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">list</span><span class="p">(</span><span class="n">make_model</span><span class="p">(</span><span class="s2">"ridge"</span><span class="p">)</span><span class="o">.</span><span class="n">named_steps</span><span class="p">)</span>
+<span class="go">['scale', 'reg']</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
                         <input id="mod-ml-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
@@ -146,162 +157,236 @@ correlated; splitting them would leak information and overstate skill).</p>
 </span><span id="L-13"><a href="#L-13"><span class="linenos"> 13</span></a><span class="sd">Hyperparameters are selected by grouped K-fold cross-validation in which all</span>
 </span><span id="L-14"><a href="#L-14"><span class="linenos"> 14</span></a><span class="sd">rows from one gap stay in the same fold (rows inside a gap are strongly</span>
 </span><span id="L-15"><a href="#L-15"><span class="linenos"> 15</span></a><span class="sd">correlated; splitting them would leak information and overstate skill).</span>
-</span><span id="L-16"><a href="#L-16"><span class="linenos"> 16</span></a><span class="sd">"""</span>
-</span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a>
-</span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
-</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a>
-</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
-</span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+</span><span id="L-16"><a href="#L-16"><span class="linenos"> 16</span></a>
+</span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a><span class="sd">Example:</span>
+</span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a><span class="sd">    &gt;&gt;&gt; from sensorfill.ml import make_model</span>
+</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a><span class="sd">    &gt;&gt;&gt; list(make_model("ridge").named_steps)</span>
+</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="sd">    ['scale', 'reg']</span>
+</span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a><span class="sd">"""</span>
 </span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a>
-</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-</span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-</span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.ensemble</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomForestRegressor</span>
-</span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">LinearRegression</span><span class="p">,</span> <span class="n">Ridge</span>
-</span><span id="L-27"><a href="#L-27"><span class="linenos"> 27</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.model_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">GridSearchCV</span><span class="p">,</span> <span class="n">GroupKFold</span>
-</span><span id="L-28"><a href="#L-28"><span class="linenos"> 28</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.neural_network</span><span class="w"> </span><span class="kn">import</span> <span class="n">MLPRegressor</span>
-</span><span id="L-29"><a href="#L-29"><span class="linenos"> 29</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pipeline</span>
-</span><span id="L-30"><a href="#L-30"><span class="linenos"> 30</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.preprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">StandardScaler</span>
-</span><span id="L-31"><a href="#L-31"><span class="linenos"> 31</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.svm</span><span class="w"> </span><span class="kn">import</span> <span class="n">SVR</span>
-</span><span id="L-32"><a href="#L-32"><span class="linenos"> 32</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">DecisionTreeRegressor</span>
-</span><span id="L-33"><a href="#L-33"><span class="linenos"> 33</span></a>
-</span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.features</span><span class="w"> </span><span class="kn">import</span> <span class="n">GapFeatureBuilder</span>
-</span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a>
-</span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a>
-</span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a><span class="k">def</span><span class="w"> </span><span class="nf">make_model</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
-</span><span id="L-38"><a href="#L-38"><span class="linenos"> 38</span></a><span class="w">    </span><span class="sd">"""Create a scikit-learn pipeline (scaler + regressor) by name.</span>
-</span><span id="L-39"><a href="#L-39"><span class="linenos"> 39</span></a>
-</span><span id="L-40"><a href="#L-40"><span class="linenos"> 40</span></a><span class="sd">    Args:</span>
-</span><span id="L-41"><a href="#L-41"><span class="linenos"> 41</span></a><span class="sd">        name: One of ``linear, ridge, tree, forest, svr, mlp``.</span>
-</span><span id="L-42"><a href="#L-42"><span class="linenos"> 42</span></a><span class="sd">        random_state: Seed for stochastic models.</span>
-</span><span id="L-43"><a href="#L-43"><span class="linenos"> 43</span></a><span class="sd">        **params: Overrides passed to the regressor.</span>
+</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+</span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a>
+</span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+</span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+</span><span id="L-27"><a href="#L-27"><span class="linenos"> 27</span></a>
+</span><span id="L-28"><a href="#L-28"><span class="linenos"> 28</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+</span><span id="L-29"><a href="#L-29"><span class="linenos"> 29</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+</span><span id="L-30"><a href="#L-30"><span class="linenos"> 30</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.ensemble</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomForestRegressor</span>
+</span><span id="L-31"><a href="#L-31"><span class="linenos"> 31</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">LinearRegression</span><span class="p">,</span> <span class="n">Ridge</span>
+</span><span id="L-32"><a href="#L-32"><span class="linenos"> 32</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.model_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">GridSearchCV</span><span class="p">,</span> <span class="n">GroupKFold</span>
+</span><span id="L-33"><a href="#L-33"><span class="linenos"> 33</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.neural_network</span><span class="w"> </span><span class="kn">import</span> <span class="n">MLPRegressor</span>
+</span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pipeline</span>
+</span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.preprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">StandardScaler</span>
+</span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.svm</span><span class="w"> </span><span class="kn">import</span> <span class="n">SVR</span>
+</span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">DecisionTreeRegressor</span>
+</span><span id="L-38"><a href="#L-38"><span class="linenos"> 38</span></a>
+</span><span id="L-39"><a href="#L-39"><span class="linenos"> 39</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.features</span><span class="w"> </span><span class="kn">import</span> <span class="n">GapFeatureBuilder</span>
+</span><span id="L-40"><a href="#L-40"><span class="linenos"> 40</span></a>
+</span><span id="L-41"><a href="#L-41"><span class="linenos"> 41</span></a>
+</span><span id="L-42"><a href="#L-42"><span class="linenos"> 42</span></a><span class="k">def</span><span class="w"> </span><span class="nf">make_model</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+</span><span id="L-43"><a href="#L-43"><span class="linenos"> 43</span></a><span class="w">    </span><span class="sd">"""Create a scikit-learn pipeline (scaler + regressor) by name.</span>
 </span><span id="L-44"><a href="#L-44"><span class="linenos"> 44</span></a>
-</span><span id="L-45"><a href="#L-45"><span class="linenos"> 45</span></a><span class="sd">    Returns:</span>
-</span><span id="L-46"><a href="#L-46"><span class="linenos"> 46</span></a><span class="sd">        Unfitted :class:`~sklearn.pipeline.Pipeline` whose last step is named ``"reg"``.</span>
-</span><span id="L-47"><a href="#L-47"><span class="linenos"> 47</span></a><span class="sd">    """</span>
-</span><span id="L-48"><a href="#L-48"><span class="linenos"> 48</span></a>    <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"linear"</span><span class="p">:</span>
-</span><span id="L-49"><a href="#L-49"><span class="linenos"> 49</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">LinearRegression</span><span class="p">(</span><span class="o">**</span><span class="n">params</span><span class="p">)</span>
-</span><span id="L-50"><a href="#L-50"><span class="linenos"> 50</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"ridge"</span><span class="p">:</span>
-</span><span id="L-51"><a href="#L-51"><span class="linenos"> 51</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">Ridge</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"alpha"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
-</span><span id="L-52"><a href="#L-52"><span class="linenos"> 52</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"tree"</span><span class="p">:</span>
-</span><span id="L-53"><a href="#L-53"><span class="linenos"> 53</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">DecisionTreeRegressor</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"max_depth"</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span> <span class="s2">"min_samples_leaf"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span> <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
-</span><span id="L-54"><a href="#L-54"><span class="linenos"> 54</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"forest"</span><span class="p">:</span>
-</span><span id="L-55"><a href="#L-55"><span class="linenos"> 55</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">RandomForestRegressor</span><span class="p">(</span>
-</span><span id="L-56"><a href="#L-56"><span class="linenos"> 56</span></a>            <span class="o">**</span><span class="p">({</span><span class="s2">"n_estimators"</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"min_samples_leaf"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">"n_jobs"</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">)</span>
-</span><span id="L-57"><a href="#L-57"><span class="linenos"> 57</span></a>        <span class="p">)</span>
-</span><span id="L-58"><a href="#L-58"><span class="linenos"> 58</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"svr"</span><span class="p">:</span>
-</span><span id="L-59"><a href="#L-59"><span class="linenos"> 59</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">SVR</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"C"</span><span class="p">:</span> <span class="mf">10.0</span><span class="p">,</span> <span class="s2">"epsilon"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"gamma"</span><span class="p">:</span> <span class="s2">"scale"</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
-</span><span id="L-60"><a href="#L-60"><span class="linenos"> 60</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"mlp"</span><span class="p">:</span>
-</span><span id="L-61"><a href="#L-61"><span class="linenos"> 61</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">MLPRegressor</span><span class="p">(</span>
-</span><span id="L-62"><a href="#L-62"><span class="linenos"> 62</span></a>            <span class="o">**</span><span class="p">(</span>
-</span><span id="L-63"><a href="#L-63"><span class="linenos"> 63</span></a>                <span class="p">{</span>
-</span><span id="L-64"><a href="#L-64"><span class="linenos"> 64</span></a>                    <span class="s2">"hidden_layer_sizes"</span><span class="p">:</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span>
-</span><span id="L-65"><a href="#L-65"><span class="linenos"> 65</span></a>                    <span class="s2">"alpha"</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
-</span><span id="L-66"><a href="#L-66"><span class="linenos"> 66</span></a>                    <span class="s2">"learning_rate_init"</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
-</span><span id="L-67"><a href="#L-67"><span class="linenos"> 67</span></a>                    <span class="s2">"early_stopping"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-</span><span id="L-68"><a href="#L-68"><span class="linenos"> 68</span></a>                    <span class="s2">"max_iter"</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>
-</span><span id="L-69"><a href="#L-69"><span class="linenos"> 69</span></a>                    <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">,</span>
-</span><span id="L-70"><a href="#L-70"><span class="linenos"> 70</span></a>                <span class="p">}</span>
-</span><span id="L-71"><a href="#L-71"><span class="linenos"> 71</span></a>                <span class="o">|</span> <span class="n">params</span>
-</span><span id="L-72"><a href="#L-72"><span class="linenos"> 72</span></a>            <span class="p">)</span>
-</span><span id="L-73"><a href="#L-73"><span class="linenos"> 73</span></a>        <span class="p">)</span>
-</span><span id="L-74"><a href="#L-74"><span class="linenos"> 74</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="L-75"><a href="#L-75"><span class="linenos"> 75</span></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"unknown model </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
-</span><span id="L-76"><a href="#L-76"><span class="linenos"> 76</span></a>    <span class="c1"># Trees do not need scaling but it is harmless; one pipeline keeps the API uniform.</span>
-</span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a>    <span class="k">return</span> <span class="n">Pipeline</span><span class="p">([(</span><span class="s2">"scale"</span><span class="p">,</span> <span class="n">StandardScaler</span><span class="p">()),</span> <span class="p">(</span><span class="s2">"reg"</span><span class="p">,</span> <span class="n">reg</span><span class="p">)])</span>
-</span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a>
-</span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a>
-</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="c1">#: Default hyperparameter grids searched by :func:`tune`.</span>
-</span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a><span class="n">PARAM_GRIDS</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a>    <span class="s2">"linear"</span><span class="p">:</span> <span class="p">{},</span>
-</span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a>    <span class="s2">"ridge"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__alpha"</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">]},</span>
-</span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a>    <span class="s2">"tree"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__max_depth"</span><span class="p">:</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="s2">"reg__min_samples_leaf"</span><span class="p">:</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">50</span><span class="p">]},</span>
-</span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a>    <span class="s2">"forest"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__max_depth"</span><span class="p">:</span> <span class="p">[</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="s2">"reg__min_samples_leaf"</span><span class="p">:</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">20</span><span class="p">]},</span>
-</span><span id="L-86"><a href="#L-86"><span class="linenos"> 86</span></a>    <span class="s2">"svr"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__C"</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">],</span> <span class="s2">"reg__epsilon"</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="s2">"reg__gamma"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"scale"</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">]},</span>
-</span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a>    <span class="s2">"mlp"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__hidden_layer_sizes"</span><span class="p">:</span> <span class="p">[(</span><span class="mi">32</span><span class="p">,),</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span> <span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">)],</span> <span class="s2">"reg__alpha"</span><span class="p">:</span> <span class="p">[</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-2</span><span class="p">]},</span>
-</span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a><span class="p">}</span>
-</span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a>
+</span><span id="L-45"><a href="#L-45"><span class="linenos"> 45</span></a><span class="sd">    Args:</span>
+</span><span id="L-46"><a href="#L-46"><span class="linenos"> 46</span></a><span class="sd">        name: One of ``linear, ridge, tree, forest, svr, mlp``.</span>
+</span><span id="L-47"><a href="#L-47"><span class="linenos"> 47</span></a><span class="sd">        random_state: Seed for stochastic models.</span>
+</span><span id="L-48"><a href="#L-48"><span class="linenos"> 48</span></a><span class="sd">        **params: Overrides passed to the regressor.</span>
+</span><span id="L-49"><a href="#L-49"><span class="linenos"> 49</span></a>
+</span><span id="L-50"><a href="#L-50"><span class="linenos"> 50</span></a><span class="sd">    Returns:</span>
+</span><span id="L-51"><a href="#L-51"><span class="linenos"> 51</span></a><span class="sd">        Unfitted :class:`~sklearn.pipeline.Pipeline` whose last step is named ``"reg"``.</span>
+</span><span id="L-52"><a href="#L-52"><span class="linenos"> 52</span></a>
+</span><span id="L-53"><a href="#L-53"><span class="linenos"> 53</span></a><span class="sd">    Raises:</span>
+</span><span id="L-54"><a href="#L-54"><span class="linenos"> 54</span></a><span class="sd">        ValueError: If ``name`` is not a known model.</span>
+</span><span id="L-55"><a href="#L-55"><span class="linenos"> 55</span></a>
+</span><span id="L-56"><a href="#L-56"><span class="linenos"> 56</span></a><span class="sd">    Example:</span>
+</span><span id="L-57"><a href="#L-57"><span class="linenos"> 57</span></a><span class="sd">        &gt;&gt;&gt; make_model("tree", max_depth=3).named_steps["reg"].max_depth</span>
+</span><span id="L-58"><a href="#L-58"><span class="linenos"> 58</span></a><span class="sd">        3</span>
+</span><span id="L-59"><a href="#L-59"><span class="linenos"> 59</span></a><span class="sd">    """</span>
+</span><span id="L-60"><a href="#L-60"><span class="linenos"> 60</span></a>    <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"linear"</span><span class="p">:</span>
+</span><span id="L-61"><a href="#L-61"><span class="linenos"> 61</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">LinearRegression</span><span class="p">(</span><span class="o">**</span><span class="n">params</span><span class="p">)</span>
+</span><span id="L-62"><a href="#L-62"><span class="linenos"> 62</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"ridge"</span><span class="p">:</span>
+</span><span id="L-63"><a href="#L-63"><span class="linenos"> 63</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">Ridge</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"alpha"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
+</span><span id="L-64"><a href="#L-64"><span class="linenos"> 64</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"tree"</span><span class="p">:</span>
+</span><span id="L-65"><a href="#L-65"><span class="linenos"> 65</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">DecisionTreeRegressor</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"max_depth"</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span> <span class="s2">"min_samples_leaf"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span> <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
+</span><span id="L-66"><a href="#L-66"><span class="linenos"> 66</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"forest"</span><span class="p">:</span>
+</span><span id="L-67"><a href="#L-67"><span class="linenos"> 67</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">RandomForestRegressor</span><span class="p">(</span>
+</span><span id="L-68"><a href="#L-68"><span class="linenos"> 68</span></a>            <span class="o">**</span><span class="p">({</span><span class="s2">"n_estimators"</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"min_samples_leaf"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">"n_jobs"</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">)</span>
+</span><span id="L-69"><a href="#L-69"><span class="linenos"> 69</span></a>        <span class="p">)</span>
+</span><span id="L-70"><a href="#L-70"><span class="linenos"> 70</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"svr"</span><span class="p">:</span>
+</span><span id="L-71"><a href="#L-71"><span class="linenos"> 71</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">SVR</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"C"</span><span class="p">:</span> <span class="mf">10.0</span><span class="p">,</span> <span class="s2">"epsilon"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"gamma"</span><span class="p">:</span> <span class="s2">"scale"</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
+</span><span id="L-72"><a href="#L-72"><span class="linenos"> 72</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"mlp"</span><span class="p">:</span>
+</span><span id="L-73"><a href="#L-73"><span class="linenos"> 73</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">MLPRegressor</span><span class="p">(</span>
+</span><span id="L-74"><a href="#L-74"><span class="linenos"> 74</span></a>            <span class="o">**</span><span class="p">(</span>
+</span><span id="L-75"><a href="#L-75"><span class="linenos"> 75</span></a>                <span class="p">{</span>
+</span><span id="L-76"><a href="#L-76"><span class="linenos"> 76</span></a>                    <span class="s2">"hidden_layer_sizes"</span><span class="p">:</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span>
+</span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a>                    <span class="s2">"alpha"</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
+</span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a>                    <span class="s2">"learning_rate_init"</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
+</span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a>                    <span class="s2">"early_stopping"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a>                    <span class="s2">"max_iter"</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>
+</span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a>                    <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">,</span>
+</span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a>                <span class="p">}</span>
+</span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a>                <span class="o">|</span> <span class="n">params</span>
+</span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a>            <span class="p">)</span>
+</span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a>        <span class="p">)</span>
+</span><span id="L-86"><a href="#L-86"><span class="linenos"> 86</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"unknown model </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+</span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a>    <span class="c1"># Trees do not need scaling but it is harmless; one pipeline keeps the API uniform.</span>
+</span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a>    <span class="k">return</span> <span class="n">Pipeline</span><span class="p">([(</span><span class="s2">"scale"</span><span class="p">,</span> <span class="n">StandardScaler</span><span class="p">()),</span> <span class="p">(</span><span class="s2">"reg"</span><span class="p">,</span> <span class="n">reg</span><span class="p">)])</span>
 </span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a>
-</span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a><span class="k">def</span><span class="w"> </span><span class="nf">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="w">    </span><span class="sd">"""Randomly keep whole gaps until ``max_rows`` rows (SVR training is O(n^2)-O(n^3))."""</span>
-</span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a>    <span class="k">if</span> <span class="n">max_rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_rows</span><span class="p">:</span>
-</span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a>        <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span>
-</span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
-</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a>    <span class="n">ug</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">permutation</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">groups</span><span class="p">))</span>
-</span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a>    <span class="n">sizes</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span>
-</span><span id="L-98"><a href="#L-98"><span class="linenos"> 98</span></a>    <span class="n">keep</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="p">[],</span> <span class="mi">0</span>
-</span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a>    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">ug</span><span class="p">:</span>
-</span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a>        <span class="k">if</span> <span class="n">total</span> <span class="o">&gt;=</span> <span class="n">max_rows</span><span class="p">:</span>
-</span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a>            <span class="k">break</span>
-</span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a>        <span class="n">keep</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
-</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a>        <span class="n">total</span> <span class="o">+=</span> <span class="n">sizes</span><span class="p">[</span><span class="n">g</span><span class="p">]</span>
-</span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a>    <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="n">keep</span><span class="p">)</span>
-</span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a>    <span class="k">return</span> <span class="n">X</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">groups</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
-</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a>
-</span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a>
-</span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a><span class="k">def</span><span class="w"> </span><span class="nf">tune</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">n_splits</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grid</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-</span><span id="L-109"><a href="#L-109"><span class="linenos">109</span></a><span class="w">    </span><span class="sd">"""Grouped K-fold grid search for one model.</span>
-</span><span id="L-110"><a href="#L-110"><span class="linenos">110</span></a>
-</span><span id="L-111"><a href="#L-111"><span class="linenos">111</span></a><span class="sd">    Args:</span>
-</span><span id="L-112"><a href="#L-112"><span class="linenos">112</span></a><span class="sd">        name: Model name (see :func:`make_model`).</span>
-</span><span id="L-113"><a href="#L-113"><span class="linenos">113</span></a><span class="sd">        X, y, groups: Training set from :func:`sensorfill.features.make_training_set`.</span>
-</span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a><span class="sd">        n_splits: Number of folds.</span>
-</span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a><span class="sd">        max_rows: Optional row cap (whole gaps kept) for expensive models.</span>
-</span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a><span class="sd">        grid: Override of :data:`PARAM_GRIDS`.</span>
-</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a><span class="sd">        rng: Seed for subsampling.</span>
+</span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a>
+</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="c1">#: Default hyperparameter grids searched by :func:`tune`.</span>
+</span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a><span class="n">PARAM_GRIDS</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a>    <span class="s2">"linear"</span><span class="p">:</span> <span class="p">{},</span>
+</span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a>    <span class="s2">"ridge"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__alpha"</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">]},</span>
+</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a>    <span class="s2">"tree"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__max_depth"</span><span class="p">:</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="s2">"reg__min_samples_leaf"</span><span class="p">:</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">50</span><span class="p">]},</span>
+</span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a>    <span class="s2">"forest"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__max_depth"</span><span class="p">:</span> <span class="p">[</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="s2">"reg__min_samples_leaf"</span><span class="p">:</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">20</span><span class="p">]},</span>
+</span><span id="L-98"><a href="#L-98"><span class="linenos"> 98</span></a>    <span class="s2">"svr"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__C"</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">],</span> <span class="s2">"reg__epsilon"</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="s2">"reg__gamma"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"scale"</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">]},</span>
+</span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a>    <span class="s2">"mlp"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"reg__hidden_layer_sizes"</span><span class="p">:</span> <span class="p">[(</span><span class="mi">32</span><span class="p">,),</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span> <span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">)],</span> <span class="s2">"reg__alpha"</span><span class="p">:</span> <span class="p">[</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-2</span><span class="p">]},</span>
+</span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a><span class="p">}</span>
+</span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a>
+</span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a>
+</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a><span class="k">def</span><span class="w"> </span><span class="nf">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+</span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a><span class="w">    </span><span class="sd">"""Randomly keep whole gaps until at least ``max_rows`` rows are kept.</span>
+</span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a>
+</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a><span class="sd">    Needed because SVR training costs O(n^2)-O(n^3) in the number of rows.</span>
+</span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a><span class="sd">    Whole gaps are kept (never split) so grouped cross-validation stays valid.</span>
+</span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a>
+</span><span id="L-109"><a href="#L-109"><span class="linenos">109</span></a><span class="sd">    Args:</span>
+</span><span id="L-110"><a href="#L-110"><span class="linenos">110</span></a><span class="sd">        X: Feature table.</span>
+</span><span id="L-111"><a href="#L-111"><span class="linenos">111</span></a><span class="sd">        y: Targets, one per row of ``X``.</span>
+</span><span id="L-112"><a href="#L-112"><span class="linenos">112</span></a><span class="sd">        groups: Gap id of each row.</span>
+</span><span id="L-113"><a href="#L-113"><span class="linenos">113</span></a><span class="sd">        max_rows: Row budget; ``None`` keeps everything.</span>
+</span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a><span class="sd">        rng: Seed or generator.</span>
+</span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a>
+</span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a><span class="sd">    Returns:</span>
+</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a><span class="sd">        ``(X, y, groups)`` restricted to the kept gaps.</span>
 </span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a>
-</span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a><span class="sd">    Returns:</span>
-</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a><span class="sd">        Fitted :class:`~sklearn.model_selection.GridSearchCV` (``best_estimator_``</span>
-</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="sd">        is refit on the full, possibly subsampled, training set).</span>
-</span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a><span class="sd">    """</span>
-</span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a>    <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span> <span class="o">=</span> <span class="n">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">,</span> <span class="n">rng</span><span class="p">)</span>
-</span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a>    <span class="n">grid</span> <span class="o">=</span> <span class="n">PARAM_GRIDS</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">if</span> <span class="n">grid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">grid</span>
-</span><span id="L-125"><a href="#L-125"><span class="linenos">125</span></a>    <span class="n">gs</span> <span class="o">=</span> <span class="n">GridSearchCV</span><span class="p">(</span>
-</span><span id="L-126"><a href="#L-126"><span class="linenos">126</span></a>        <span class="n">make_model</span><span class="p">(</span><span class="n">name</span><span class="p">),</span>
-</span><span id="L-127"><a href="#L-127"><span class="linenos">127</span></a>        <span class="n">grid</span> <span class="ow">or</span> <span class="p">{</span><span class="s2">"reg__fit_intercept"</span><span class="p">:</span> <span class="p">[</span><span class="kc">True</span><span class="p">]},</span>
-</span><span id="L-128"><a href="#L-128"><span class="linenos">128</span></a>        <span class="n">cv</span><span class="o">=</span><span class="n">GroupKFold</span><span class="p">(</span><span class="n">n_splits</span><span class="o">=</span><span class="n">n_splits</span><span class="p">),</span>
-</span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a>        <span class="n">scoring</span><span class="o">=</span><span class="s2">"neg_root_mean_squared_error"</span><span class="p">,</span>
-</span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a>        <span class="n">n_jobs</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
-</span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a>        <span class="n">refit</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a>        <span class="n">return_train_score</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a>    <span class="p">)</span>
-</span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a>    <span class="n">gs</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="o">=</span><span class="n">groups</span><span class="p">)</span>
-</span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a>    <span class="k">return</span> <span class="n">gs</span>
-</span><span id="L-136"><a href="#L-136"><span class="linenos">136</span></a>
-</span><span id="L-137"><a href="#L-137"><span class="linenos">137</span></a>
-</span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a><span class="nd">@dataclass</span>
-</span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a><span class="k">class</span><span class="w"> </span><span class="nc">MLImputer</span><span class="p">:</span>
-</span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a><span class="w">    </span><span class="sd">"""Robust linear baseline plus a learned residual correction.</span>
-</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a>
-</span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a><span class="sd">    Attributes:</span>
-</span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a><span class="sd">        model: Fitted regressor (pipeline) predicting ``y - base``.</span>
-</span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a><span class="sd">        builder: Feature builder for the grid being imputed.</span>
-</span><span id="L-145"><a href="#L-145"><span class="linenos">145</span></a><span class="sd">        clip: Optional ``(low, high)`` physical limits applied to filled values.</span>
-</span><span id="L-146"><a href="#L-146"><span class="linenos">146</span></a><span class="sd">        fit_seconds: Training time recorded by :meth:`fit`.</span>
-</span><span id="L-147"><a href="#L-147"><span class="linenos">147</span></a><span class="sd">    """</span>
-</span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a>
-</span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a>    <span class="n">model</span><span class="p">:</span> <span class="nb">object</span>
-</span><span id="L-150"><a href="#L-150"><span class="linenos">150</span></a>    <span class="n">builder</span><span class="p">:</span> <span class="n">GapFeatureBuilder</span>
-</span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a>    <span class="n">clip</span><span class="p">:</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="L-152"><a href="#L-152"><span class="linenos">152</span></a>    <span class="n">fit_seconds</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+</span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a><span class="sd">    Example:</span>
+</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a><span class="sd">        &gt;&gt;&gt; X = pd.DataFrame({"a": range(6)})</span>
+</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="sd">        &gt;&gt;&gt; y = np.arange(6.0)</span>
+</span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a><span class="sd">        &gt;&gt;&gt; g = np.array([0, 0, 1, 1, 2, 2])</span>
+</span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a><span class="sd">        &gt;&gt;&gt; len(subsample(X, y, g, max_rows=3)[1])</span>
+</span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a><span class="sd">        4</span>
+</span><span id="L-125"><a href="#L-125"><span class="linenos">125</span></a><span class="sd">    """</span>
+</span><span id="L-126"><a href="#L-126"><span class="linenos">126</span></a>    <span class="k">if</span> <span class="n">max_rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_rows</span><span class="p">:</span>
+</span><span id="L-127"><a href="#L-127"><span class="linenos">127</span></a>        <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span>
+</span><span id="L-128"><a href="#L-128"><span class="linenos">128</span></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+</span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a>    <span class="n">ug</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">permutation</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">groups</span><span class="p">))</span>
+</span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a>    <span class="n">sizes</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span>
+</span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a>    <span class="n">keep</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="p">[],</span> <span class="mi">0</span>
+</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a>    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">ug</span><span class="p">:</span>
+</span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a>        <span class="k">if</span> <span class="n">total</span> <span class="o">&gt;=</span> <span class="n">max_rows</span><span class="p">:</span>
+</span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a>            <span class="k">break</span>
+</span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a>        <span class="n">keep</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+</span><span id="L-136"><a href="#L-136"><span class="linenos">136</span></a>        <span class="n">total</span> <span class="o">+=</span> <span class="n">sizes</span><span class="p">[</span><span class="n">g</span><span class="p">]</span>
+</span><span id="L-137"><a href="#L-137"><span class="linenos">137</span></a>    <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="n">keep</span><span class="p">)</span>
+</span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a>    <span class="k">return</span> <span class="n">X</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">groups</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
+</span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a>
+</span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a>
+</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a><span class="k">def</span><span class="w"> </span><span class="nf">tune</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">n_splits</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grid</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+</span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a><span class="w">    </span><span class="sd">"""Grouped K-fold grid search for one model.</span>
+</span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a>
+</span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a><span class="sd">    Args:</span>
+</span><span id="L-145"><a href="#L-145"><span class="linenos">145</span></a><span class="sd">        name: Model name (see :func:`make_model`).</span>
+</span><span id="L-146"><a href="#L-146"><span class="linenos">146</span></a><span class="sd">        X: Feature table from :func:`sensorfill.features.make_training_set`.</span>
+</span><span id="L-147"><a href="#L-147"><span class="linenos">147</span></a><span class="sd">        y: Residual targets from the same call.</span>
+</span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a><span class="sd">        groups: Gap ids from the same call (keep a gap's rows in one fold).</span>
+</span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a><span class="sd">        n_splits: Number of folds.</span>
+</span><span id="L-150"><a href="#L-150"><span class="linenos">150</span></a><span class="sd">        max_rows: Optional row cap (whole gaps kept) for expensive models.</span>
+</span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a><span class="sd">        grid: Override of :data:`PARAM_GRIDS`.</span>
+</span><span id="L-152"><a href="#L-152"><span class="linenos">152</span></a><span class="sd">        rng: Seed for subsampling.</span>
 </span><span id="L-153"><a href="#L-153"><span class="linenos">153</span></a>
-</span><span id="L-154"><a href="#L-154"><span class="linenos">154</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
-</span><span id="L-155"><a href="#L-155"><span class="linenos">155</span></a><span class="w">        </span><span class="sd">"""Fit the residual model and record the wall-clock training time."""</span>
-</span><span id="L-156"><a href="#L-156"><span class="linenos">156</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-</span><span id="L-157"><a href="#L-157"><span class="linenos">157</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
-</span><span id="L-158"><a href="#L-158"><span class="linenos">158</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">fit_seconds</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
-</span><span id="L-159"><a href="#L-159"><span class="linenos">159</span></a>        <span class="k">return</span> <span class="bp">self</span>
+</span><span id="L-154"><a href="#L-154"><span class="linenos">154</span></a><span class="sd">    Returns:</span>
+</span><span id="L-155"><a href="#L-155"><span class="linenos">155</span></a><span class="sd">        Fitted :class:`~sklearn.model_selection.GridSearchCV` (``best_estimator_``</span>
+</span><span id="L-156"><a href="#L-156"><span class="linenos">156</span></a><span class="sd">        is refit on the full, possibly subsampled, training set).</span>
+</span><span id="L-157"><a href="#L-157"><span class="linenos">157</span></a>
+</span><span id="L-158"><a href="#L-158"><span class="linenos">158</span></a><span class="sd">    Raises:</span>
+</span><span id="L-159"><a href="#L-159"><span class="linenos">159</span></a><span class="sd">        KeyError: If ``name`` has no default grid and ``grid`` is None.</span>
 </span><span id="L-160"><a href="#L-160"><span class="linenos">160</span></a>
-</span><span id="L-161"><a href="#L-161"><span class="linenos">161</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">impute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="L-162"><a href="#L-162"><span class="linenos">162</span></a><span class="w">        </span><span class="sd">"""Return a filled copy of ``y`` (edge gaps fall back to the baseline)."""</span>
-</span><span id="L-163"><a href="#L-163"><span class="linenos">163</span></a>        <span class="n">X</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">y_lin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">builder</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
-</span><span id="L-164"><a href="#L-164"><span class="linenos">164</span></a>        <span class="n">out</span> <span class="o">=</span> <span class="n">y_lin</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-</span><span id="L-165"><a href="#L-165"><span class="linenos">165</span></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
-</span><span id="L-166"><a href="#L-166"><span class="linenos">166</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">y_lin</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
-</span><span id="L-167"><a href="#L-167"><span class="linenos">167</span></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="L-168"><a href="#L-168"><span class="linenos">168</span></a>            <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span>
-</span><span id="L-169"><a href="#L-169"><span class="linenos">169</span></a>            <span class="n">miss</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
-</span><span id="L-170"><a href="#L-170"><span class="linenos">170</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">],</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>
-</span><span id="L-171"><a href="#L-171"><span class="linenos">171</span></a>        <span class="k">return</span> <span class="n">out</span>
+</span><span id="L-161"><a href="#L-161"><span class="linenos">161</span></a><span class="sd">    Example:</span>
+</span><span id="L-162"><a href="#L-162"><span class="linenos">162</span></a><span class="sd">        &gt;&gt;&gt; rng = np.random.default_rng(0)</span>
+</span><span id="L-163"><a href="#L-163"><span class="linenos">163</span></a><span class="sd">        &gt;&gt;&gt; X = pd.DataFrame({"a": rng.normal(size=60)})</span>
+</span><span id="L-164"><a href="#L-164"><span class="linenos">164</span></a><span class="sd">        &gt;&gt;&gt; y = 2 * X["a"].to_numpy()</span>
+</span><span id="L-165"><a href="#L-165"><span class="linenos">165</span></a><span class="sd">        &gt;&gt;&gt; gs = tune("ridge", X, y, np.repeat(np.arange(12), 5), n_splits=3)</span>
+</span><span id="L-166"><a href="#L-166"><span class="linenos">166</span></a><span class="sd">        &gt;&gt;&gt; gs.best_params_</span>
+</span><span id="L-167"><a href="#L-167"><span class="linenos">167</span></a><span class="sd">        {'reg__alpha': 0.1}</span>
+</span><span id="L-168"><a href="#L-168"><span class="linenos">168</span></a><span class="sd">    """</span>
+</span><span id="L-169"><a href="#L-169"><span class="linenos">169</span></a>    <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span> <span class="o">=</span> <span class="n">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">,</span> <span class="n">rng</span><span class="p">)</span>
+</span><span id="L-170"><a href="#L-170"><span class="linenos">170</span></a>    <span class="n">grid</span> <span class="o">=</span> <span class="n">PARAM_GRIDS</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">if</span> <span class="n">grid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">grid</span>
+</span><span id="L-171"><a href="#L-171"><span class="linenos">171</span></a>    <span class="n">gs</span> <span class="o">=</span> <span class="n">GridSearchCV</span><span class="p">(</span>
+</span><span id="L-172"><a href="#L-172"><span class="linenos">172</span></a>        <span class="n">make_model</span><span class="p">(</span><span class="n">name</span><span class="p">),</span>
+</span><span id="L-173"><a href="#L-173"><span class="linenos">173</span></a>        <span class="n">grid</span> <span class="ow">or</span> <span class="p">{</span><span class="s2">"reg__fit_intercept"</span><span class="p">:</span> <span class="p">[</span><span class="kc">True</span><span class="p">]},</span>
+</span><span id="L-174"><a href="#L-174"><span class="linenos">174</span></a>        <span class="n">cv</span><span class="o">=</span><span class="n">GroupKFold</span><span class="p">(</span><span class="n">n_splits</span><span class="o">=</span><span class="n">n_splits</span><span class="p">),</span>
+</span><span id="L-175"><a href="#L-175"><span class="linenos">175</span></a>        <span class="n">scoring</span><span class="o">=</span><span class="s2">"neg_root_mean_squared_error"</span><span class="p">,</span>
+</span><span id="L-176"><a href="#L-176"><span class="linenos">176</span></a>        <span class="n">n_jobs</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+</span><span id="L-177"><a href="#L-177"><span class="linenos">177</span></a>        <span class="n">refit</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="L-178"><a href="#L-178"><span class="linenos">178</span></a>        <span class="n">return_train_score</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="L-179"><a href="#L-179"><span class="linenos">179</span></a>    <span class="p">)</span>
+</span><span id="L-180"><a href="#L-180"><span class="linenos">180</span></a>    <span class="n">gs</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="o">=</span><span class="n">groups</span><span class="p">)</span>
+</span><span id="L-181"><a href="#L-181"><span class="linenos">181</span></a>    <span class="k">return</span> <span class="n">gs</span>
+</span><span id="L-182"><a href="#L-182"><span class="linenos">182</span></a>
+</span><span id="L-183"><a href="#L-183"><span class="linenos">183</span></a>
+</span><span id="L-184"><a href="#L-184"><span class="linenos">184</span></a><span class="nd">@dataclass</span>
+</span><span id="L-185"><a href="#L-185"><span class="linenos">185</span></a><span class="k">class</span><span class="w"> </span><span class="nc">MLImputer</span><span class="p">:</span>
+</span><span id="L-186"><a href="#L-186"><span class="linenos">186</span></a><span class="w">    </span><span class="sd">"""Robust linear baseline plus a learned residual correction.</span>
+</span><span id="L-187"><a href="#L-187"><span class="linenos">187</span></a>
+</span><span id="L-188"><a href="#L-188"><span class="linenos">188</span></a><span class="sd">    Attributes:</span>
+</span><span id="L-189"><a href="#L-189"><span class="linenos">189</span></a><span class="sd">        model: Fitted regressor (pipeline) predicting ``y - base``.</span>
+</span><span id="L-190"><a href="#L-190"><span class="linenos">190</span></a><span class="sd">        builder: Feature builder for the grid being imputed.</span>
+</span><span id="L-191"><a href="#L-191"><span class="linenos">191</span></a><span class="sd">        clip: Optional ``(low, high)`` physical limits applied to filled values.</span>
+</span><span id="L-192"><a href="#L-192"><span class="linenos">192</span></a><span class="sd">        fit_seconds: Training time recorded by :meth:`fit`.</span>
+</span><span id="L-193"><a href="#L-193"><span class="linenos">193</span></a>
+</span><span id="L-194"><a href="#L-194"><span class="linenos">194</span></a><span class="sd">    Example:</span>
+</span><span id="L-195"><a href="#L-195"><span class="linenos">195</span></a><span class="sd">        &gt;&gt;&gt; ts = pd.date_range("2024-06-03", periods=6, freq="10min")</span>
+</span><span id="L-196"><a href="#L-196"><span class="linenos">196</span></a><span class="sd">        &gt;&gt;&gt; b = GapFeatureBuilder(ts, use_neighbour_days=False, anchor_k=1)</span>
+</span><span id="L-197"><a href="#L-197"><span class="linenos">197</span></a><span class="sd">        &gt;&gt;&gt; X, _, _ = b.build([0.0, np.nan, 2.0, np.nan, 4.0, 5.0])</span>
+</span><span id="L-198"><a href="#L-198"><span class="linenos">198</span></a><span class="sd">        &gt;&gt;&gt; imp = MLImputer(make_model("linear"), b).fit(X, np.zeros(len(X)))</span>
+</span><span id="L-199"><a href="#L-199"><span class="linenos">199</span></a><span class="sd">        &gt;&gt;&gt; imp.impute([0.0, np.nan, 2.0, np.nan, 4.0, 5.0])  # zero correction = linear</span>
+</span><span id="L-200"><a href="#L-200"><span class="linenos">200</span></a><span class="sd">        array([0., 1., 2., 3., 4., 5.])</span>
+</span><span id="L-201"><a href="#L-201"><span class="linenos">201</span></a><span class="sd">    """</span>
+</span><span id="L-202"><a href="#L-202"><span class="linenos">202</span></a>
+</span><span id="L-203"><a href="#L-203"><span class="linenos">203</span></a>    <span class="n">model</span><span class="p">:</span> <span class="nb">object</span>
+</span><span id="L-204"><a href="#L-204"><span class="linenos">204</span></a>    <span class="n">builder</span><span class="p">:</span> <span class="n">GapFeatureBuilder</span>
+</span><span id="L-205"><a href="#L-205"><span class="linenos">205</span></a>    <span class="n">clip</span><span class="p">:</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="L-206"><a href="#L-206"><span class="linenos">206</span></a>    <span class="n">fit_seconds</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+</span><span id="L-207"><a href="#L-207"><span class="linenos">207</span></a>
+</span><span id="L-208"><a href="#L-208"><span class="linenos">208</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+</span><span id="L-209"><a href="#L-209"><span class="linenos">209</span></a><span class="w">        </span><span class="sd">"""Fit the residual model and record the wall-clock training time.</span>
+</span><span id="L-210"><a href="#L-210"><span class="linenos">210</span></a>
+</span><span id="L-211"><a href="#L-211"><span class="linenos">211</span></a><span class="sd">        Args:</span>
+</span><span id="L-212"><a href="#L-212"><span class="linenos">212</span></a><span class="sd">            X: Feature table (from :func:`sensorfill.features.make_training_set`).</span>
+</span><span id="L-213"><a href="#L-213"><span class="linenos">213</span></a><span class="sd">            target: Residuals ``y_true - base`` for each row.</span>
+</span><span id="L-214"><a href="#L-214"><span class="linenos">214</span></a>
+</span><span id="L-215"><a href="#L-215"><span class="linenos">215</span></a><span class="sd">        Returns:</span>
+</span><span id="L-216"><a href="#L-216"><span class="linenos">216</span></a><span class="sd">            ``self``, so calls can be chained.</span>
+</span><span id="L-217"><a href="#L-217"><span class="linenos">217</span></a><span class="sd">        """</span>
+</span><span id="L-218"><a href="#L-218"><span class="linenos">218</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+</span><span id="L-219"><a href="#L-219"><span class="linenos">219</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+</span><span id="L-220"><a href="#L-220"><span class="linenos">220</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">fit_seconds</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
+</span><span id="L-221"><a href="#L-221"><span class="linenos">221</span></a>        <span class="k">return</span> <span class="bp">self</span>
+</span><span id="L-222"><a href="#L-222"><span class="linenos">222</span></a>
+</span><span id="L-223"><a href="#L-223"><span class="linenos">223</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">impute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="L-224"><a href="#L-224"><span class="linenos">224</span></a><span class="w">        </span><span class="sd">"""Fill the gaps of a series.</span>
+</span><span id="L-225"><a href="#L-225"><span class="linenos">225</span></a>
+</span><span id="L-226"><a href="#L-226"><span class="linenos">226</span></a><span class="sd">        Args:</span>
+</span><span id="L-227"><a href="#L-227"><span class="linenos">227</span></a><span class="sd">            y: Series with NaNs on the builder's grid.</span>
+</span><span id="L-228"><a href="#L-228"><span class="linenos">228</span></a>
+</span><span id="L-229"><a href="#L-229"><span class="linenos">229</span></a><span class="sd">        Returns:</span>
+</span><span id="L-230"><a href="#L-230"><span class="linenos">230</span></a><span class="sd">            Filled copy of ``y``: baseline plus learned correction inside</span>
+</span><span id="L-231"><a href="#L-231"><span class="linenos">231</span></a><span class="sd">            interior gaps; edge gaps fall back to the baseline. Filled values</span>
+</span><span id="L-232"><a href="#L-232"><span class="linenos">232</span></a><span class="sd">            are clipped to :attr:`clip` if set; observed values are untouched.</span>
+</span><span id="L-233"><a href="#L-233"><span class="linenos">233</span></a>
+</span><span id="L-234"><a href="#L-234"><span class="linenos">234</span></a><span class="sd">        Raises:</span>
+</span><span id="L-235"><a href="#L-235"><span class="linenos">235</span></a><span class="sd">            ValueError: If ``y`` does not match the builder's grid length.</span>
+</span><span id="L-236"><a href="#L-236"><span class="linenos">236</span></a><span class="sd">        """</span>
+</span><span id="L-237"><a href="#L-237"><span class="linenos">237</span></a>        <span class="n">X</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">y_lin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">builder</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+</span><span id="L-238"><a href="#L-238"><span class="linenos">238</span></a>        <span class="n">out</span> <span class="o">=</span> <span class="n">y_lin</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+</span><span id="L-239"><a href="#L-239"><span class="linenos">239</span></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
+</span><span id="L-240"><a href="#L-240"><span class="linenos">240</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">y_lin</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+</span><span id="L-241"><a href="#L-241"><span class="linenos">241</span></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="L-242"><a href="#L-242"><span class="linenos">242</span></a>            <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span>
+</span><span id="L-243"><a href="#L-243"><span class="linenos">243</span></a>            <span class="n">miss</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+</span><span id="L-244"><a href="#L-244"><span class="linenos">244</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">],</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>
+</span><span id="L-245"><a href="#L-245"><span class="linenos">245</span></a>        <span class="k">return</span> <span class="n">out</span>
 </span></pre></div>
 
 
@@ -317,47 +402,54 @@ correlated; splitting them would leak information and overstate skill).</p>
 
     </div>
     <a class="headerlink" href="#make_model"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="make_model-38"><a href="#make_model-38"><span class="linenos">38</span></a><span class="k">def</span><span class="w"> </span><span class="nf">make_model</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
-</span><span id="make_model-39"><a href="#make_model-39"><span class="linenos">39</span></a><span class="w">    </span><span class="sd">"""Create a scikit-learn pipeline (scaler + regressor) by name.</span>
-</span><span id="make_model-40"><a href="#make_model-40"><span class="linenos">40</span></a>
-</span><span id="make_model-41"><a href="#make_model-41"><span class="linenos">41</span></a><span class="sd">    Args:</span>
-</span><span id="make_model-42"><a href="#make_model-42"><span class="linenos">42</span></a><span class="sd">        name: One of ``linear, ridge, tree, forest, svr, mlp``.</span>
-</span><span id="make_model-43"><a href="#make_model-43"><span class="linenos">43</span></a><span class="sd">        random_state: Seed for stochastic models.</span>
-</span><span id="make_model-44"><a href="#make_model-44"><span class="linenos">44</span></a><span class="sd">        **params: Overrides passed to the regressor.</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="make_model-43"><a href="#make_model-43"><span class="linenos">43</span></a><span class="k">def</span><span class="w"> </span><span class="nf">make_model</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+</span><span id="make_model-44"><a href="#make_model-44"><span class="linenos">44</span></a><span class="w">    </span><span class="sd">"""Create a scikit-learn pipeline (scaler + regressor) by name.</span>
 </span><span id="make_model-45"><a href="#make_model-45"><span class="linenos">45</span></a>
-</span><span id="make_model-46"><a href="#make_model-46"><span class="linenos">46</span></a><span class="sd">    Returns:</span>
-</span><span id="make_model-47"><a href="#make_model-47"><span class="linenos">47</span></a><span class="sd">        Unfitted :class:`~sklearn.pipeline.Pipeline` whose last step is named ``"reg"``.</span>
-</span><span id="make_model-48"><a href="#make_model-48"><span class="linenos">48</span></a><span class="sd">    """</span>
-</span><span id="make_model-49"><a href="#make_model-49"><span class="linenos">49</span></a>    <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"linear"</span><span class="p">:</span>
-</span><span id="make_model-50"><a href="#make_model-50"><span class="linenos">50</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">LinearRegression</span><span class="p">(</span><span class="o">**</span><span class="n">params</span><span class="p">)</span>
-</span><span id="make_model-51"><a href="#make_model-51"><span class="linenos">51</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"ridge"</span><span class="p">:</span>
-</span><span id="make_model-52"><a href="#make_model-52"><span class="linenos">52</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">Ridge</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"alpha"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
-</span><span id="make_model-53"><a href="#make_model-53"><span class="linenos">53</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"tree"</span><span class="p">:</span>
-</span><span id="make_model-54"><a href="#make_model-54"><span class="linenos">54</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">DecisionTreeRegressor</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"max_depth"</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span> <span class="s2">"min_samples_leaf"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span> <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
-</span><span id="make_model-55"><a href="#make_model-55"><span class="linenos">55</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"forest"</span><span class="p">:</span>
-</span><span id="make_model-56"><a href="#make_model-56"><span class="linenos">56</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">RandomForestRegressor</span><span class="p">(</span>
-</span><span id="make_model-57"><a href="#make_model-57"><span class="linenos">57</span></a>            <span class="o">**</span><span class="p">({</span><span class="s2">"n_estimators"</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"min_samples_leaf"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">"n_jobs"</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">)</span>
-</span><span id="make_model-58"><a href="#make_model-58"><span class="linenos">58</span></a>        <span class="p">)</span>
-</span><span id="make_model-59"><a href="#make_model-59"><span class="linenos">59</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"svr"</span><span class="p">:</span>
-</span><span id="make_model-60"><a href="#make_model-60"><span class="linenos">60</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">SVR</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"C"</span><span class="p">:</span> <span class="mf">10.0</span><span class="p">,</span> <span class="s2">"epsilon"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"gamma"</span><span class="p">:</span> <span class="s2">"scale"</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
-</span><span id="make_model-61"><a href="#make_model-61"><span class="linenos">61</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"mlp"</span><span class="p">:</span>
-</span><span id="make_model-62"><a href="#make_model-62"><span class="linenos">62</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">MLPRegressor</span><span class="p">(</span>
-</span><span id="make_model-63"><a href="#make_model-63"><span class="linenos">63</span></a>            <span class="o">**</span><span class="p">(</span>
-</span><span id="make_model-64"><a href="#make_model-64"><span class="linenos">64</span></a>                <span class="p">{</span>
-</span><span id="make_model-65"><a href="#make_model-65"><span class="linenos">65</span></a>                    <span class="s2">"hidden_layer_sizes"</span><span class="p">:</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span>
-</span><span id="make_model-66"><a href="#make_model-66"><span class="linenos">66</span></a>                    <span class="s2">"alpha"</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
-</span><span id="make_model-67"><a href="#make_model-67"><span class="linenos">67</span></a>                    <span class="s2">"learning_rate_init"</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
-</span><span id="make_model-68"><a href="#make_model-68"><span class="linenos">68</span></a>                    <span class="s2">"early_stopping"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-</span><span id="make_model-69"><a href="#make_model-69"><span class="linenos">69</span></a>                    <span class="s2">"max_iter"</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>
-</span><span id="make_model-70"><a href="#make_model-70"><span class="linenos">70</span></a>                    <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">,</span>
-</span><span id="make_model-71"><a href="#make_model-71"><span class="linenos">71</span></a>                <span class="p">}</span>
-</span><span id="make_model-72"><a href="#make_model-72"><span class="linenos">72</span></a>                <span class="o">|</span> <span class="n">params</span>
-</span><span id="make_model-73"><a href="#make_model-73"><span class="linenos">73</span></a>            <span class="p">)</span>
-</span><span id="make_model-74"><a href="#make_model-74"><span class="linenos">74</span></a>        <span class="p">)</span>
-</span><span id="make_model-75"><a href="#make_model-75"><span class="linenos">75</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="make_model-76"><a href="#make_model-76"><span class="linenos">76</span></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"unknown model </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
-</span><span id="make_model-77"><a href="#make_model-77"><span class="linenos">77</span></a>    <span class="c1"># Trees do not need scaling but it is harmless; one pipeline keeps the API uniform.</span>
-</span><span id="make_model-78"><a href="#make_model-78"><span class="linenos">78</span></a>    <span class="k">return</span> <span class="n">Pipeline</span><span class="p">([(</span><span class="s2">"scale"</span><span class="p">,</span> <span class="n">StandardScaler</span><span class="p">()),</span> <span class="p">(</span><span class="s2">"reg"</span><span class="p">,</span> <span class="n">reg</span><span class="p">)])</span>
+</span><span id="make_model-46"><a href="#make_model-46"><span class="linenos">46</span></a><span class="sd">    Args:</span>
+</span><span id="make_model-47"><a href="#make_model-47"><span class="linenos">47</span></a><span class="sd">        name: One of ``linear, ridge, tree, forest, svr, mlp``.</span>
+</span><span id="make_model-48"><a href="#make_model-48"><span class="linenos">48</span></a><span class="sd">        random_state: Seed for stochastic models.</span>
+</span><span id="make_model-49"><a href="#make_model-49"><span class="linenos">49</span></a><span class="sd">        **params: Overrides passed to the regressor.</span>
+</span><span id="make_model-50"><a href="#make_model-50"><span class="linenos">50</span></a>
+</span><span id="make_model-51"><a href="#make_model-51"><span class="linenos">51</span></a><span class="sd">    Returns:</span>
+</span><span id="make_model-52"><a href="#make_model-52"><span class="linenos">52</span></a><span class="sd">        Unfitted :class:`~sklearn.pipeline.Pipeline` whose last step is named ``"reg"``.</span>
+</span><span id="make_model-53"><a href="#make_model-53"><span class="linenos">53</span></a>
+</span><span id="make_model-54"><a href="#make_model-54"><span class="linenos">54</span></a><span class="sd">    Raises:</span>
+</span><span id="make_model-55"><a href="#make_model-55"><span class="linenos">55</span></a><span class="sd">        ValueError: If ``name`` is not a known model.</span>
+</span><span id="make_model-56"><a href="#make_model-56"><span class="linenos">56</span></a>
+</span><span id="make_model-57"><a href="#make_model-57"><span class="linenos">57</span></a><span class="sd">    Example:</span>
+</span><span id="make_model-58"><a href="#make_model-58"><span class="linenos">58</span></a><span class="sd">        &gt;&gt;&gt; make_model("tree", max_depth=3).named_steps["reg"].max_depth</span>
+</span><span id="make_model-59"><a href="#make_model-59"><span class="linenos">59</span></a><span class="sd">        3</span>
+</span><span id="make_model-60"><a href="#make_model-60"><span class="linenos">60</span></a><span class="sd">    """</span>
+</span><span id="make_model-61"><a href="#make_model-61"><span class="linenos">61</span></a>    <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"linear"</span><span class="p">:</span>
+</span><span id="make_model-62"><a href="#make_model-62"><span class="linenos">62</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">LinearRegression</span><span class="p">(</span><span class="o">**</span><span class="n">params</span><span class="p">)</span>
+</span><span id="make_model-63"><a href="#make_model-63"><span class="linenos">63</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"ridge"</span><span class="p">:</span>
+</span><span id="make_model-64"><a href="#make_model-64"><span class="linenos">64</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">Ridge</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"alpha"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
+</span><span id="make_model-65"><a href="#make_model-65"><span class="linenos">65</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"tree"</span><span class="p">:</span>
+</span><span id="make_model-66"><a href="#make_model-66"><span class="linenos">66</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">DecisionTreeRegressor</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"max_depth"</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span> <span class="s2">"min_samples_leaf"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span> <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
+</span><span id="make_model-67"><a href="#make_model-67"><span class="linenos">67</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"forest"</span><span class="p">:</span>
+</span><span id="make_model-68"><a href="#make_model-68"><span class="linenos">68</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">RandomForestRegressor</span><span class="p">(</span>
+</span><span id="make_model-69"><a href="#make_model-69"><span class="linenos">69</span></a>            <span class="o">**</span><span class="p">({</span><span class="s2">"n_estimators"</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"min_samples_leaf"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">"n_jobs"</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">)</span>
+</span><span id="make_model-70"><a href="#make_model-70"><span class="linenos">70</span></a>        <span class="p">)</span>
+</span><span id="make_model-71"><a href="#make_model-71"><span class="linenos">71</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"svr"</span><span class="p">:</span>
+</span><span id="make_model-72"><a href="#make_model-72"><span class="linenos">72</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">SVR</span><span class="p">(</span><span class="o">**</span><span class="p">({</span><span class="s2">"C"</span><span class="p">:</span> <span class="mf">10.0</span><span class="p">,</span> <span class="s2">"epsilon"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"gamma"</span><span class="p">:</span> <span class="s2">"scale"</span><span class="p">}</span> <span class="o">|</span> <span class="n">params</span><span class="p">))</span>
+</span><span id="make_model-73"><a href="#make_model-73"><span class="linenos">73</span></a>    <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"mlp"</span><span class="p">:</span>
+</span><span id="make_model-74"><a href="#make_model-74"><span class="linenos">74</span></a>        <span class="n">reg</span> <span class="o">=</span> <span class="n">MLPRegressor</span><span class="p">(</span>
+</span><span id="make_model-75"><a href="#make_model-75"><span class="linenos">75</span></a>            <span class="o">**</span><span class="p">(</span>
+</span><span id="make_model-76"><a href="#make_model-76"><span class="linenos">76</span></a>                <span class="p">{</span>
+</span><span id="make_model-77"><a href="#make_model-77"><span class="linenos">77</span></a>                    <span class="s2">"hidden_layer_sizes"</span><span class="p">:</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span>
+</span><span id="make_model-78"><a href="#make_model-78"><span class="linenos">78</span></a>                    <span class="s2">"alpha"</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
+</span><span id="make_model-79"><a href="#make_model-79"><span class="linenos">79</span></a>                    <span class="s2">"learning_rate_init"</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
+</span><span id="make_model-80"><a href="#make_model-80"><span class="linenos">80</span></a>                    <span class="s2">"early_stopping"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+</span><span id="make_model-81"><a href="#make_model-81"><span class="linenos">81</span></a>                    <span class="s2">"max_iter"</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>
+</span><span id="make_model-82"><a href="#make_model-82"><span class="linenos">82</span></a>                    <span class="s2">"random_state"</span><span class="p">:</span> <span class="n">random_state</span><span class="p">,</span>
+</span><span id="make_model-83"><a href="#make_model-83"><span class="linenos">83</span></a>                <span class="p">}</span>
+</span><span id="make_model-84"><a href="#make_model-84"><span class="linenos">84</span></a>                <span class="o">|</span> <span class="n">params</span>
+</span><span id="make_model-85"><a href="#make_model-85"><span class="linenos">85</span></a>            <span class="p">)</span>
+</span><span id="make_model-86"><a href="#make_model-86"><span class="linenos">86</span></a>        <span class="p">)</span>
+</span><span id="make_model-87"><a href="#make_model-87"><span class="linenos">87</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="make_model-88"><a href="#make_model-88"><span class="linenos">88</span></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"unknown model </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+</span><span id="make_model-89"><a href="#make_model-89"><span class="linenos">89</span></a>    <span class="c1"># Trees do not need scaling but it is harmless; one pipeline keeps the API uniform.</span>
+</span><span id="make_model-90"><a href="#make_model-90"><span class="linenos">90</span></a>    <span class="k">return</span> <span class="n">Pipeline</span><span class="p">([(</span><span class="s2">"scale"</span><span class="p">,</span> <span class="n">StandardScaler</span><span class="p">()),</span> <span class="p">(</span><span class="s2">"reg"</span><span class="p">,</span> <span class="n">reg</span><span class="p">)])</span>
 </span></pre></div>
 
 
@@ -375,6 +467,22 @@ correlated; splitting them would leak information and overstate skill).</p>
 
 <blockquote>
   <p>Unfitted <code>~sklearn.pipeline.Pipeline</code> whose last step is named <code>"reg"</code>.</p>
+</blockquote>
+
+<h6 id="raises">Raises:</h6>
+
+<ul>
+<li><strong>ValueError:</strong>  If <code>name</code> is not a known model.</li>
+</ul>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">make_model</span><span class="p">(</span><span class="s2">"tree"</span><span class="p">,</span> <span class="n">max_depth</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">named_steps</span><span class="p">[</span><span class="s2">"reg"</span><span class="p">]</span><span class="o">.</span><span class="n">max_depth</span>
+<span class="go">3</span>
+</code></pre>
+  </div>
 </blockquote>
 </div>
 
@@ -404,25 +512,78 @@ correlated; splitting them would leak information and overstate skill).</p>
 
     </div>
     <a class="headerlink" href="#subsample"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="subsample-92"><a href="#subsample-92"><span class="linenos"> 92</span></a><span class="k">def</span><span class="w"> </span><span class="nf">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-</span><span id="subsample-93"><a href="#subsample-93"><span class="linenos"> 93</span></a><span class="w">    </span><span class="sd">"""Randomly keep whole gaps until ``max_rows`` rows (SVR training is O(n^2)-O(n^3))."""</span>
-</span><span id="subsample-94"><a href="#subsample-94"><span class="linenos"> 94</span></a>    <span class="k">if</span> <span class="n">max_rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_rows</span><span class="p">:</span>
-</span><span id="subsample-95"><a href="#subsample-95"><span class="linenos"> 95</span></a>        <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span>
-</span><span id="subsample-96"><a href="#subsample-96"><span class="linenos"> 96</span></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
-</span><span id="subsample-97"><a href="#subsample-97"><span class="linenos"> 97</span></a>    <span class="n">ug</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">permutation</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">groups</span><span class="p">))</span>
-</span><span id="subsample-98"><a href="#subsample-98"><span class="linenos"> 98</span></a>    <span class="n">sizes</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span>
-</span><span id="subsample-99"><a href="#subsample-99"><span class="linenos"> 99</span></a>    <span class="n">keep</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="p">[],</span> <span class="mi">0</span>
-</span><span id="subsample-100"><a href="#subsample-100"><span class="linenos">100</span></a>    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">ug</span><span class="p">:</span>
-</span><span id="subsample-101"><a href="#subsample-101"><span class="linenos">101</span></a>        <span class="k">if</span> <span class="n">total</span> <span class="o">&gt;=</span> <span class="n">max_rows</span><span class="p">:</span>
-</span><span id="subsample-102"><a href="#subsample-102"><span class="linenos">102</span></a>            <span class="k">break</span>
-</span><span id="subsample-103"><a href="#subsample-103"><span class="linenos">103</span></a>        <span class="n">keep</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
-</span><span id="subsample-104"><a href="#subsample-104"><span class="linenos">104</span></a>        <span class="n">total</span> <span class="o">+=</span> <span class="n">sizes</span><span class="p">[</span><span class="n">g</span><span class="p">]</span>
-</span><span id="subsample-105"><a href="#subsample-105"><span class="linenos">105</span></a>    <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="n">keep</span><span class="p">)</span>
-</span><span id="subsample-106"><a href="#subsample-106"><span class="linenos">106</span></a>    <span class="k">return</span> <span class="n">X</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">groups</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="subsample-104"><a href="#subsample-104"><span class="linenos">104</span></a><span class="k">def</span><span class="w"> </span><span class="nf">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+</span><span id="subsample-105"><a href="#subsample-105"><span class="linenos">105</span></a><span class="w">    </span><span class="sd">"""Randomly keep whole gaps until at least ``max_rows`` rows are kept.</span>
+</span><span id="subsample-106"><a href="#subsample-106"><span class="linenos">106</span></a>
+</span><span id="subsample-107"><a href="#subsample-107"><span class="linenos">107</span></a><span class="sd">    Needed because SVR training costs O(n^2)-O(n^3) in the number of rows.</span>
+</span><span id="subsample-108"><a href="#subsample-108"><span class="linenos">108</span></a><span class="sd">    Whole gaps are kept (never split) so grouped cross-validation stays valid.</span>
+</span><span id="subsample-109"><a href="#subsample-109"><span class="linenos">109</span></a>
+</span><span id="subsample-110"><a href="#subsample-110"><span class="linenos">110</span></a><span class="sd">    Args:</span>
+</span><span id="subsample-111"><a href="#subsample-111"><span class="linenos">111</span></a><span class="sd">        X: Feature table.</span>
+</span><span id="subsample-112"><a href="#subsample-112"><span class="linenos">112</span></a><span class="sd">        y: Targets, one per row of ``X``.</span>
+</span><span id="subsample-113"><a href="#subsample-113"><span class="linenos">113</span></a><span class="sd">        groups: Gap id of each row.</span>
+</span><span id="subsample-114"><a href="#subsample-114"><span class="linenos">114</span></a><span class="sd">        max_rows: Row budget; ``None`` keeps everything.</span>
+</span><span id="subsample-115"><a href="#subsample-115"><span class="linenos">115</span></a><span class="sd">        rng: Seed or generator.</span>
+</span><span id="subsample-116"><a href="#subsample-116"><span class="linenos">116</span></a>
+</span><span id="subsample-117"><a href="#subsample-117"><span class="linenos">117</span></a><span class="sd">    Returns:</span>
+</span><span id="subsample-118"><a href="#subsample-118"><span class="linenos">118</span></a><span class="sd">        ``(X, y, groups)`` restricted to the kept gaps.</span>
+</span><span id="subsample-119"><a href="#subsample-119"><span class="linenos">119</span></a>
+</span><span id="subsample-120"><a href="#subsample-120"><span class="linenos">120</span></a><span class="sd">    Example:</span>
+</span><span id="subsample-121"><a href="#subsample-121"><span class="linenos">121</span></a><span class="sd">        &gt;&gt;&gt; X = pd.DataFrame({"a": range(6)})</span>
+</span><span id="subsample-122"><a href="#subsample-122"><span class="linenos">122</span></a><span class="sd">        &gt;&gt;&gt; y = np.arange(6.0)</span>
+</span><span id="subsample-123"><a href="#subsample-123"><span class="linenos">123</span></a><span class="sd">        &gt;&gt;&gt; g = np.array([0, 0, 1, 1, 2, 2])</span>
+</span><span id="subsample-124"><a href="#subsample-124"><span class="linenos">124</span></a><span class="sd">        &gt;&gt;&gt; len(subsample(X, y, g, max_rows=3)[1])</span>
+</span><span id="subsample-125"><a href="#subsample-125"><span class="linenos">125</span></a><span class="sd">        4</span>
+</span><span id="subsample-126"><a href="#subsample-126"><span class="linenos">126</span></a><span class="sd">    """</span>
+</span><span id="subsample-127"><a href="#subsample-127"><span class="linenos">127</span></a>    <span class="k">if</span> <span class="n">max_rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_rows</span><span class="p">:</span>
+</span><span id="subsample-128"><a href="#subsample-128"><span class="linenos">128</span></a>        <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span>
+</span><span id="subsample-129"><a href="#subsample-129"><span class="linenos">129</span></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+</span><span id="subsample-130"><a href="#subsample-130"><span class="linenos">130</span></a>    <span class="n">ug</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">permutation</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">groups</span><span class="p">))</span>
+</span><span id="subsample-131"><a href="#subsample-131"><span class="linenos">131</span></a>    <span class="n">sizes</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span>
+</span><span id="subsample-132"><a href="#subsample-132"><span class="linenos">132</span></a>    <span class="n">keep</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="p">[],</span> <span class="mi">0</span>
+</span><span id="subsample-133"><a href="#subsample-133"><span class="linenos">133</span></a>    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">ug</span><span class="p">:</span>
+</span><span id="subsample-134"><a href="#subsample-134"><span class="linenos">134</span></a>        <span class="k">if</span> <span class="n">total</span> <span class="o">&gt;=</span> <span class="n">max_rows</span><span class="p">:</span>
+</span><span id="subsample-135"><a href="#subsample-135"><span class="linenos">135</span></a>            <span class="k">break</span>
+</span><span id="subsample-136"><a href="#subsample-136"><span class="linenos">136</span></a>        <span class="n">keep</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+</span><span id="subsample-137"><a href="#subsample-137"><span class="linenos">137</span></a>        <span class="n">total</span> <span class="o">+=</span> <span class="n">sizes</span><span class="p">[</span><span class="n">g</span><span class="p">]</span>
+</span><span id="subsample-138"><a href="#subsample-138"><span class="linenos">138</span></a>    <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="n">keep</span><span class="p">)</span>
+</span><span id="subsample-139"><a href="#subsample-139"><span class="linenos">139</span></a>    <span class="k">return</span> <span class="n">X</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">groups</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
 </span></pre></div>
 
 
-            <div class="docstring"><p>Randomly keep whole gaps until <code>max_rows</code> rows (SVR training is O(n^2)-O(n^3)).</p>
+            <div class="docstring"><p>Randomly keep whole gaps until at least <code>max_rows</code> rows are kept.</p>
+
+<p>Needed because SVR training costs O(n^2)-O(n^3) in the number of rows.
+Whole gaps are kept (never split) so grouped cross-validation stays valid.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>X:</strong>  Feature table.</li>
+<li><strong>y:</strong>  Targets, one per row of <code>X</code>.</li>
+<li><strong>groups:</strong>  Gap id of each row.</li>
+<li><strong>max_rows:</strong>  Row budget; <code>None</code> keeps everything.</li>
+<li><strong>rng:</strong>  Seed or generator.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p><code>(X, y, groups)</code> restricted to the kept gaps.</p>
+</blockquote>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">X</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">"a"</span><span class="p">:</span> <span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">)})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">6.0</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">len</span><span class="p">(</span><span class="n">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">max_rows</span><span class="o">=</span><span class="mi">3</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+<span class="go">4</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
 
@@ -438,34 +599,47 @@ correlated; splitting them would leak information and overstate skill).</p>
 
     </div>
     <a class="headerlink" href="#tune"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="tune-109"><a href="#tune-109"><span class="linenos">109</span></a><span class="k">def</span><span class="w"> </span><span class="nf">tune</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">n_splits</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grid</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-</span><span id="tune-110"><a href="#tune-110"><span class="linenos">110</span></a><span class="w">    </span><span class="sd">"""Grouped K-fold grid search for one model.</span>
-</span><span id="tune-111"><a href="#tune-111"><span class="linenos">111</span></a>
-</span><span id="tune-112"><a href="#tune-112"><span class="linenos">112</span></a><span class="sd">    Args:</span>
-</span><span id="tune-113"><a href="#tune-113"><span class="linenos">113</span></a><span class="sd">        name: Model name (see :func:`make_model`).</span>
-</span><span id="tune-114"><a href="#tune-114"><span class="linenos">114</span></a><span class="sd">        X, y, groups: Training set from :func:`sensorfill.features.make_training_set`.</span>
-</span><span id="tune-115"><a href="#tune-115"><span class="linenos">115</span></a><span class="sd">        n_splits: Number of folds.</span>
-</span><span id="tune-116"><a href="#tune-116"><span class="linenos">116</span></a><span class="sd">        max_rows: Optional row cap (whole gaps kept) for expensive models.</span>
-</span><span id="tune-117"><a href="#tune-117"><span class="linenos">117</span></a><span class="sd">        grid: Override of :data:`PARAM_GRIDS`.</span>
-</span><span id="tune-118"><a href="#tune-118"><span class="linenos">118</span></a><span class="sd">        rng: Seed for subsampling.</span>
-</span><span id="tune-119"><a href="#tune-119"><span class="linenos">119</span></a>
-</span><span id="tune-120"><a href="#tune-120"><span class="linenos">120</span></a><span class="sd">    Returns:</span>
-</span><span id="tune-121"><a href="#tune-121"><span class="linenos">121</span></a><span class="sd">        Fitted :class:`~sklearn.model_selection.GridSearchCV` (``best_estimator_``</span>
-</span><span id="tune-122"><a href="#tune-122"><span class="linenos">122</span></a><span class="sd">        is refit on the full, possibly subsampled, training set).</span>
-</span><span id="tune-123"><a href="#tune-123"><span class="linenos">123</span></a><span class="sd">    """</span>
-</span><span id="tune-124"><a href="#tune-124"><span class="linenos">124</span></a>    <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span> <span class="o">=</span> <span class="n">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">,</span> <span class="n">rng</span><span class="p">)</span>
-</span><span id="tune-125"><a href="#tune-125"><span class="linenos">125</span></a>    <span class="n">grid</span> <span class="o">=</span> <span class="n">PARAM_GRIDS</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">if</span> <span class="n">grid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">grid</span>
-</span><span id="tune-126"><a href="#tune-126"><span class="linenos">126</span></a>    <span class="n">gs</span> <span class="o">=</span> <span class="n">GridSearchCV</span><span class="p">(</span>
-</span><span id="tune-127"><a href="#tune-127"><span class="linenos">127</span></a>        <span class="n">make_model</span><span class="p">(</span><span class="n">name</span><span class="p">),</span>
-</span><span id="tune-128"><a href="#tune-128"><span class="linenos">128</span></a>        <span class="n">grid</span> <span class="ow">or</span> <span class="p">{</span><span class="s2">"reg__fit_intercept"</span><span class="p">:</span> <span class="p">[</span><span class="kc">True</span><span class="p">]},</span>
-</span><span id="tune-129"><a href="#tune-129"><span class="linenos">129</span></a>        <span class="n">cv</span><span class="o">=</span><span class="n">GroupKFold</span><span class="p">(</span><span class="n">n_splits</span><span class="o">=</span><span class="n">n_splits</span><span class="p">),</span>
-</span><span id="tune-130"><a href="#tune-130"><span class="linenos">130</span></a>        <span class="n">scoring</span><span class="o">=</span><span class="s2">"neg_root_mean_squared_error"</span><span class="p">,</span>
-</span><span id="tune-131"><a href="#tune-131"><span class="linenos">131</span></a>        <span class="n">n_jobs</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
-</span><span id="tune-132"><a href="#tune-132"><span class="linenos">132</span></a>        <span class="n">refit</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="tune-133"><a href="#tune-133"><span class="linenos">133</span></a>        <span class="n">return_train_score</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="tune-134"><a href="#tune-134"><span class="linenos">134</span></a>    <span class="p">)</span>
-</span><span id="tune-135"><a href="#tune-135"><span class="linenos">135</span></a>    <span class="n">gs</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="o">=</span><span class="n">groups</span><span class="p">)</span>
-</span><span id="tune-136"><a href="#tune-136"><span class="linenos">136</span></a>    <span class="k">return</span> <span class="n">gs</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="tune-142"><a href="#tune-142"><span class="linenos">142</span></a><span class="k">def</span><span class="w"> </span><span class="nf">tune</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">n_splits</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grid</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+</span><span id="tune-143"><a href="#tune-143"><span class="linenos">143</span></a><span class="w">    </span><span class="sd">"""Grouped K-fold grid search for one model.</span>
+</span><span id="tune-144"><a href="#tune-144"><span class="linenos">144</span></a>
+</span><span id="tune-145"><a href="#tune-145"><span class="linenos">145</span></a><span class="sd">    Args:</span>
+</span><span id="tune-146"><a href="#tune-146"><span class="linenos">146</span></a><span class="sd">        name: Model name (see :func:`make_model`).</span>
+</span><span id="tune-147"><a href="#tune-147"><span class="linenos">147</span></a><span class="sd">        X: Feature table from :func:`sensorfill.features.make_training_set`.</span>
+</span><span id="tune-148"><a href="#tune-148"><span class="linenos">148</span></a><span class="sd">        y: Residual targets from the same call.</span>
+</span><span id="tune-149"><a href="#tune-149"><span class="linenos">149</span></a><span class="sd">        groups: Gap ids from the same call (keep a gap's rows in one fold).</span>
+</span><span id="tune-150"><a href="#tune-150"><span class="linenos">150</span></a><span class="sd">        n_splits: Number of folds.</span>
+</span><span id="tune-151"><a href="#tune-151"><span class="linenos">151</span></a><span class="sd">        max_rows: Optional row cap (whole gaps kept) for expensive models.</span>
+</span><span id="tune-152"><a href="#tune-152"><span class="linenos">152</span></a><span class="sd">        grid: Override of :data:`PARAM_GRIDS`.</span>
+</span><span id="tune-153"><a href="#tune-153"><span class="linenos">153</span></a><span class="sd">        rng: Seed for subsampling.</span>
+</span><span id="tune-154"><a href="#tune-154"><span class="linenos">154</span></a>
+</span><span id="tune-155"><a href="#tune-155"><span class="linenos">155</span></a><span class="sd">    Returns:</span>
+</span><span id="tune-156"><a href="#tune-156"><span class="linenos">156</span></a><span class="sd">        Fitted :class:`~sklearn.model_selection.GridSearchCV` (``best_estimator_``</span>
+</span><span id="tune-157"><a href="#tune-157"><span class="linenos">157</span></a><span class="sd">        is refit on the full, possibly subsampled, training set).</span>
+</span><span id="tune-158"><a href="#tune-158"><span class="linenos">158</span></a>
+</span><span id="tune-159"><a href="#tune-159"><span class="linenos">159</span></a><span class="sd">    Raises:</span>
+</span><span id="tune-160"><a href="#tune-160"><span class="linenos">160</span></a><span class="sd">        KeyError: If ``name`` has no default grid and ``grid`` is None.</span>
+</span><span id="tune-161"><a href="#tune-161"><span class="linenos">161</span></a>
+</span><span id="tune-162"><a href="#tune-162"><span class="linenos">162</span></a><span class="sd">    Example:</span>
+</span><span id="tune-163"><a href="#tune-163"><span class="linenos">163</span></a><span class="sd">        &gt;&gt;&gt; rng = np.random.default_rng(0)</span>
+</span><span id="tune-164"><a href="#tune-164"><span class="linenos">164</span></a><span class="sd">        &gt;&gt;&gt; X = pd.DataFrame({"a": rng.normal(size=60)})</span>
+</span><span id="tune-165"><a href="#tune-165"><span class="linenos">165</span></a><span class="sd">        &gt;&gt;&gt; y = 2 * X["a"].to_numpy()</span>
+</span><span id="tune-166"><a href="#tune-166"><span class="linenos">166</span></a><span class="sd">        &gt;&gt;&gt; gs = tune("ridge", X, y, np.repeat(np.arange(12), 5), n_splits=3)</span>
+</span><span id="tune-167"><a href="#tune-167"><span class="linenos">167</span></a><span class="sd">        &gt;&gt;&gt; gs.best_params_</span>
+</span><span id="tune-168"><a href="#tune-168"><span class="linenos">168</span></a><span class="sd">        {'reg__alpha': 0.1}</span>
+</span><span id="tune-169"><a href="#tune-169"><span class="linenos">169</span></a><span class="sd">    """</span>
+</span><span id="tune-170"><a href="#tune-170"><span class="linenos">170</span></a>    <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span> <span class="o">=</span> <span class="n">subsample</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">max_rows</span><span class="p">,</span> <span class="n">rng</span><span class="p">)</span>
+</span><span id="tune-171"><a href="#tune-171"><span class="linenos">171</span></a>    <span class="n">grid</span> <span class="o">=</span> <span class="n">PARAM_GRIDS</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">if</span> <span class="n">grid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">grid</span>
+</span><span id="tune-172"><a href="#tune-172"><span class="linenos">172</span></a>    <span class="n">gs</span> <span class="o">=</span> <span class="n">GridSearchCV</span><span class="p">(</span>
+</span><span id="tune-173"><a href="#tune-173"><span class="linenos">173</span></a>        <span class="n">make_model</span><span class="p">(</span><span class="n">name</span><span class="p">),</span>
+</span><span id="tune-174"><a href="#tune-174"><span class="linenos">174</span></a>        <span class="n">grid</span> <span class="ow">or</span> <span class="p">{</span><span class="s2">"reg__fit_intercept"</span><span class="p">:</span> <span class="p">[</span><span class="kc">True</span><span class="p">]},</span>
+</span><span id="tune-175"><a href="#tune-175"><span class="linenos">175</span></a>        <span class="n">cv</span><span class="o">=</span><span class="n">GroupKFold</span><span class="p">(</span><span class="n">n_splits</span><span class="o">=</span><span class="n">n_splits</span><span class="p">),</span>
+</span><span id="tune-176"><a href="#tune-176"><span class="linenos">176</span></a>        <span class="n">scoring</span><span class="o">=</span><span class="s2">"neg_root_mean_squared_error"</span><span class="p">,</span>
+</span><span id="tune-177"><a href="#tune-177"><span class="linenos">177</span></a>        <span class="n">n_jobs</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+</span><span id="tune-178"><a href="#tune-178"><span class="linenos">178</span></a>        <span class="n">refit</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="tune-179"><a href="#tune-179"><span class="linenos">179</span></a>        <span class="n">return_train_score</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="tune-180"><a href="#tune-180"><span class="linenos">180</span></a>    <span class="p">)</span>
+</span><span id="tune-181"><a href="#tune-181"><span class="linenos">181</span></a>    <span class="n">gs</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">groups</span><span class="o">=</span><span class="n">groups</span><span class="p">)</span>
+</span><span id="tune-182"><a href="#tune-182"><span class="linenos">182</span></a>    <span class="k">return</span> <span class="n">gs</span>
 </span></pre></div>
 
 
@@ -475,7 +649,9 @@ correlated; splitting them would leak information and overstate skill).</p>
 
 <ul>
 <li><strong>name:</strong>  Model name (see <code><a href="#make_model">make_model()</a></code>).</li>
-<li><strong>X, y, groups:</strong>  Training set from <code><a href="features.html#make_training_set">sensorfill.features.make_training_set()</a></code>.</li>
+<li><strong>X:</strong>  Feature table from <code><a href="features.html#make_training_set">sensorfill.features.make_training_set()</a></code>.</li>
+<li><strong>y:</strong>  Residual targets from the same call.</li>
+<li><strong>groups:</strong>  Gap ids from the same call (keep a gap's rows in one fold).</li>
 <li><strong>n_splits:</strong>  Number of folds.</li>
 <li><strong>max_rows:</strong>  Optional row cap (whole gaps kept) for expensive models.</li>
 <li><strong>grid:</strong>  Override of <code><a href="#PARAM_GRIDS">PARAM_GRIDS</a></code>.</li>
@@ -487,6 +663,26 @@ correlated; splitting them would leak information and overstate skill).</p>
 <blockquote>
   <p>Fitted <code>~sklearn.model_selection.GridSearchCV</code> (<code>best_estimator_</code>
   is refit on the full, possibly subsampled, training set).</p>
+</blockquote>
+
+<h6 id="raises">Raises:</h6>
+
+<ul>
+<li><strong>KeyError:</strong>  If <code>name</code> has no default grid and <code>grid</code> is None.</li>
+</ul>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">X</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">"a"</span><span class="p">:</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">60</span><span class="p">)})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">y</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">X</span><span class="p">[</span><span class="s2">"a"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gs</span> <span class="o">=</span> <span class="n">tune</span><span class="p">(</span><span class="s2">"ridge"</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">12</span><span class="p">),</span> <span class="mi">5</span><span class="p">),</span> <span class="n">n_splits</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gs</span><span class="o">.</span><span class="n">best_params_</span>
+<span class="go">{'reg__alpha': 0.1}</span>
+</code></pre>
+  </div>
 </blockquote>
 </div>
 
@@ -504,40 +700,68 @@ correlated; splitting them would leak information and overstate skill).</p>
 
     </div>
     <a class="headerlink" href="#MLImputer"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="MLImputer-139"><a href="#MLImputer-139"><span class="linenos">139</span></a><span class="nd">@dataclass</span>
-</span><span id="MLImputer-140"><a href="#MLImputer-140"><span class="linenos">140</span></a><span class="k">class</span><span class="w"> </span><span class="nc">MLImputer</span><span class="p">:</span>
-</span><span id="MLImputer-141"><a href="#MLImputer-141"><span class="linenos">141</span></a><span class="w">    </span><span class="sd">"""Robust linear baseline plus a learned residual correction.</span>
-</span><span id="MLImputer-142"><a href="#MLImputer-142"><span class="linenos">142</span></a>
-</span><span id="MLImputer-143"><a href="#MLImputer-143"><span class="linenos">143</span></a><span class="sd">    Attributes:</span>
-</span><span id="MLImputer-144"><a href="#MLImputer-144"><span class="linenos">144</span></a><span class="sd">        model: Fitted regressor (pipeline) predicting ``y - base``.</span>
-</span><span id="MLImputer-145"><a href="#MLImputer-145"><span class="linenos">145</span></a><span class="sd">        builder: Feature builder for the grid being imputed.</span>
-</span><span id="MLImputer-146"><a href="#MLImputer-146"><span class="linenos">146</span></a><span class="sd">        clip: Optional ``(low, high)`` physical limits applied to filled values.</span>
-</span><span id="MLImputer-147"><a href="#MLImputer-147"><span class="linenos">147</span></a><span class="sd">        fit_seconds: Training time recorded by :meth:`fit`.</span>
-</span><span id="MLImputer-148"><a href="#MLImputer-148"><span class="linenos">148</span></a><span class="sd">    """</span>
-</span><span id="MLImputer-149"><a href="#MLImputer-149"><span class="linenos">149</span></a>
-</span><span id="MLImputer-150"><a href="#MLImputer-150"><span class="linenos">150</span></a>    <span class="n">model</span><span class="p">:</span> <span class="nb">object</span>
-</span><span id="MLImputer-151"><a href="#MLImputer-151"><span class="linenos">151</span></a>    <span class="n">builder</span><span class="p">:</span> <span class="n">GapFeatureBuilder</span>
-</span><span id="MLImputer-152"><a href="#MLImputer-152"><span class="linenos">152</span></a>    <span class="n">clip</span><span class="p">:</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="MLImputer-153"><a href="#MLImputer-153"><span class="linenos">153</span></a>    <span class="n">fit_seconds</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
-</span><span id="MLImputer-154"><a href="#MLImputer-154"><span class="linenos">154</span></a>
-</span><span id="MLImputer-155"><a href="#MLImputer-155"><span class="linenos">155</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
-</span><span id="MLImputer-156"><a href="#MLImputer-156"><span class="linenos">156</span></a><span class="w">        </span><span class="sd">"""Fit the residual model and record the wall-clock training time."""</span>
-</span><span id="MLImputer-157"><a href="#MLImputer-157"><span class="linenos">157</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-</span><span id="MLImputer-158"><a href="#MLImputer-158"><span class="linenos">158</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
-</span><span id="MLImputer-159"><a href="#MLImputer-159"><span class="linenos">159</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">fit_seconds</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
-</span><span id="MLImputer-160"><a href="#MLImputer-160"><span class="linenos">160</span></a>        <span class="k">return</span> <span class="bp">self</span>
-</span><span id="MLImputer-161"><a href="#MLImputer-161"><span class="linenos">161</span></a>
-</span><span id="MLImputer-162"><a href="#MLImputer-162"><span class="linenos">162</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">impute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="MLImputer-163"><a href="#MLImputer-163"><span class="linenos">163</span></a><span class="w">        </span><span class="sd">"""Return a filled copy of ``y`` (edge gaps fall back to the baseline)."""</span>
-</span><span id="MLImputer-164"><a href="#MLImputer-164"><span class="linenos">164</span></a>        <span class="n">X</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">y_lin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">builder</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
-</span><span id="MLImputer-165"><a href="#MLImputer-165"><span class="linenos">165</span></a>        <span class="n">out</span> <span class="o">=</span> <span class="n">y_lin</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-</span><span id="MLImputer-166"><a href="#MLImputer-166"><span class="linenos">166</span></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
-</span><span id="MLImputer-167"><a href="#MLImputer-167"><span class="linenos">167</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">y_lin</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
-</span><span id="MLImputer-168"><a href="#MLImputer-168"><span class="linenos">168</span></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="MLImputer-169"><a href="#MLImputer-169"><span class="linenos">169</span></a>            <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span>
-</span><span id="MLImputer-170"><a href="#MLImputer-170"><span class="linenos">170</span></a>            <span class="n">miss</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
-</span><span id="MLImputer-171"><a href="#MLImputer-171"><span class="linenos">171</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">],</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>
-</span><span id="MLImputer-172"><a href="#MLImputer-172"><span class="linenos">172</span></a>        <span class="k">return</span> <span class="n">out</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="MLImputer-185"><a href="#MLImputer-185"><span class="linenos">185</span></a><span class="nd">@dataclass</span>
+</span><span id="MLImputer-186"><a href="#MLImputer-186"><span class="linenos">186</span></a><span class="k">class</span><span class="w"> </span><span class="nc">MLImputer</span><span class="p">:</span>
+</span><span id="MLImputer-187"><a href="#MLImputer-187"><span class="linenos">187</span></a><span class="w">    </span><span class="sd">"""Robust linear baseline plus a learned residual correction.</span>
+</span><span id="MLImputer-188"><a href="#MLImputer-188"><span class="linenos">188</span></a>
+</span><span id="MLImputer-189"><a href="#MLImputer-189"><span class="linenos">189</span></a><span class="sd">    Attributes:</span>
+</span><span id="MLImputer-190"><a href="#MLImputer-190"><span class="linenos">190</span></a><span class="sd">        model: Fitted regressor (pipeline) predicting ``y - base``.</span>
+</span><span id="MLImputer-191"><a href="#MLImputer-191"><span class="linenos">191</span></a><span class="sd">        builder: Feature builder for the grid being imputed.</span>
+</span><span id="MLImputer-192"><a href="#MLImputer-192"><span class="linenos">192</span></a><span class="sd">        clip: Optional ``(low, high)`` physical limits applied to filled values.</span>
+</span><span id="MLImputer-193"><a href="#MLImputer-193"><span class="linenos">193</span></a><span class="sd">        fit_seconds: Training time recorded by :meth:`fit`.</span>
+</span><span id="MLImputer-194"><a href="#MLImputer-194"><span class="linenos">194</span></a>
+</span><span id="MLImputer-195"><a href="#MLImputer-195"><span class="linenos">195</span></a><span class="sd">    Example:</span>
+</span><span id="MLImputer-196"><a href="#MLImputer-196"><span class="linenos">196</span></a><span class="sd">        &gt;&gt;&gt; ts = pd.date_range("2024-06-03", periods=6, freq="10min")</span>
+</span><span id="MLImputer-197"><a href="#MLImputer-197"><span class="linenos">197</span></a><span class="sd">        &gt;&gt;&gt; b = GapFeatureBuilder(ts, use_neighbour_days=False, anchor_k=1)</span>
+</span><span id="MLImputer-198"><a href="#MLImputer-198"><span class="linenos">198</span></a><span class="sd">        &gt;&gt;&gt; X, _, _ = b.build([0.0, np.nan, 2.0, np.nan, 4.0, 5.0])</span>
+</span><span id="MLImputer-199"><a href="#MLImputer-199"><span class="linenos">199</span></a><span class="sd">        &gt;&gt;&gt; imp = MLImputer(make_model("linear"), b).fit(X, np.zeros(len(X)))</span>
+</span><span id="MLImputer-200"><a href="#MLImputer-200"><span class="linenos">200</span></a><span class="sd">        &gt;&gt;&gt; imp.impute([0.0, np.nan, 2.0, np.nan, 4.0, 5.0])  # zero correction = linear</span>
+</span><span id="MLImputer-201"><a href="#MLImputer-201"><span class="linenos">201</span></a><span class="sd">        array([0., 1., 2., 3., 4., 5.])</span>
+</span><span id="MLImputer-202"><a href="#MLImputer-202"><span class="linenos">202</span></a><span class="sd">    """</span>
+</span><span id="MLImputer-203"><a href="#MLImputer-203"><span class="linenos">203</span></a>
+</span><span id="MLImputer-204"><a href="#MLImputer-204"><span class="linenos">204</span></a>    <span class="n">model</span><span class="p">:</span> <span class="nb">object</span>
+</span><span id="MLImputer-205"><a href="#MLImputer-205"><span class="linenos">205</span></a>    <span class="n">builder</span><span class="p">:</span> <span class="n">GapFeatureBuilder</span>
+</span><span id="MLImputer-206"><a href="#MLImputer-206"><span class="linenos">206</span></a>    <span class="n">clip</span><span class="p">:</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="MLImputer-207"><a href="#MLImputer-207"><span class="linenos">207</span></a>    <span class="n">fit_seconds</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+</span><span id="MLImputer-208"><a href="#MLImputer-208"><span class="linenos">208</span></a>
+</span><span id="MLImputer-209"><a href="#MLImputer-209"><span class="linenos">209</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+</span><span id="MLImputer-210"><a href="#MLImputer-210"><span class="linenos">210</span></a><span class="w">        </span><span class="sd">"""Fit the residual model and record the wall-clock training time.</span>
+</span><span id="MLImputer-211"><a href="#MLImputer-211"><span class="linenos">211</span></a>
+</span><span id="MLImputer-212"><a href="#MLImputer-212"><span class="linenos">212</span></a><span class="sd">        Args:</span>
+</span><span id="MLImputer-213"><a href="#MLImputer-213"><span class="linenos">213</span></a><span class="sd">            X: Feature table (from :func:`sensorfill.features.make_training_set`).</span>
+</span><span id="MLImputer-214"><a href="#MLImputer-214"><span class="linenos">214</span></a><span class="sd">            target: Residuals ``y_true - base`` for each row.</span>
+</span><span id="MLImputer-215"><a href="#MLImputer-215"><span class="linenos">215</span></a>
+</span><span id="MLImputer-216"><a href="#MLImputer-216"><span class="linenos">216</span></a><span class="sd">        Returns:</span>
+</span><span id="MLImputer-217"><a href="#MLImputer-217"><span class="linenos">217</span></a><span class="sd">            ``self``, so calls can be chained.</span>
+</span><span id="MLImputer-218"><a href="#MLImputer-218"><span class="linenos">218</span></a><span class="sd">        """</span>
+</span><span id="MLImputer-219"><a href="#MLImputer-219"><span class="linenos">219</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+</span><span id="MLImputer-220"><a href="#MLImputer-220"><span class="linenos">220</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+</span><span id="MLImputer-221"><a href="#MLImputer-221"><span class="linenos">221</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">fit_seconds</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
+</span><span id="MLImputer-222"><a href="#MLImputer-222"><span class="linenos">222</span></a>        <span class="k">return</span> <span class="bp">self</span>
+</span><span id="MLImputer-223"><a href="#MLImputer-223"><span class="linenos">223</span></a>
+</span><span id="MLImputer-224"><a href="#MLImputer-224"><span class="linenos">224</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">impute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="MLImputer-225"><a href="#MLImputer-225"><span class="linenos">225</span></a><span class="w">        </span><span class="sd">"""Fill the gaps of a series.</span>
+</span><span id="MLImputer-226"><a href="#MLImputer-226"><span class="linenos">226</span></a>
+</span><span id="MLImputer-227"><a href="#MLImputer-227"><span class="linenos">227</span></a><span class="sd">        Args:</span>
+</span><span id="MLImputer-228"><a href="#MLImputer-228"><span class="linenos">228</span></a><span class="sd">            y: Series with NaNs on the builder's grid.</span>
+</span><span id="MLImputer-229"><a href="#MLImputer-229"><span class="linenos">229</span></a>
+</span><span id="MLImputer-230"><a href="#MLImputer-230"><span class="linenos">230</span></a><span class="sd">        Returns:</span>
+</span><span id="MLImputer-231"><a href="#MLImputer-231"><span class="linenos">231</span></a><span class="sd">            Filled copy of ``y``: baseline plus learned correction inside</span>
+</span><span id="MLImputer-232"><a href="#MLImputer-232"><span class="linenos">232</span></a><span class="sd">            interior gaps; edge gaps fall back to the baseline. Filled values</span>
+</span><span id="MLImputer-233"><a href="#MLImputer-233"><span class="linenos">233</span></a><span class="sd">            are clipped to :attr:`clip` if set; observed values are untouched.</span>
+</span><span id="MLImputer-234"><a href="#MLImputer-234"><span class="linenos">234</span></a>
+</span><span id="MLImputer-235"><a href="#MLImputer-235"><span class="linenos">235</span></a><span class="sd">        Raises:</span>
+</span><span id="MLImputer-236"><a href="#MLImputer-236"><span class="linenos">236</span></a><span class="sd">            ValueError: If ``y`` does not match the builder's grid length.</span>
+</span><span id="MLImputer-237"><a href="#MLImputer-237"><span class="linenos">237</span></a><span class="sd">        """</span>
+</span><span id="MLImputer-238"><a href="#MLImputer-238"><span class="linenos">238</span></a>        <span class="n">X</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">y_lin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">builder</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+</span><span id="MLImputer-239"><a href="#MLImputer-239"><span class="linenos">239</span></a>        <span class="n">out</span> <span class="o">=</span> <span class="n">y_lin</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+</span><span id="MLImputer-240"><a href="#MLImputer-240"><span class="linenos">240</span></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
+</span><span id="MLImputer-241"><a href="#MLImputer-241"><span class="linenos">241</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">y_lin</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+</span><span id="MLImputer-242"><a href="#MLImputer-242"><span class="linenos">242</span></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="MLImputer-243"><a href="#MLImputer-243"><span class="linenos">243</span></a>            <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span>
+</span><span id="MLImputer-244"><a href="#MLImputer-244"><span class="linenos">244</span></a>            <span class="n">miss</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+</span><span id="MLImputer-245"><a href="#MLImputer-245"><span class="linenos">245</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">],</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>
+</span><span id="MLImputer-246"><a href="#MLImputer-246"><span class="linenos">246</span></a>        <span class="k">return</span> <span class="n">out</span>
 </span></pre></div>
 
 
@@ -551,6 +775,20 @@ correlated; splitting them would leak information and overstate skill).</p>
 <li><strong>clip:</strong>  Optional <code>(low, high)</code> physical limits applied to filled values.</li>
 <li><strong>fit_seconds:</strong>  Training time recorded by <code><a href="#MLImputer.fit">fit()</a></code>.</li>
 </ul>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="s2">"2024-06-03"</span><span class="p">,</span> <span class="n">periods</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="s2">"10min"</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">b</span> <span class="o">=</span> <span class="n">GapFeatureBuilder</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">use_neighbour_days</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">anchor_k</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">X</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">build</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">imp</span> <span class="o">=</span> <span class="n">MLImputer</span><span class="p">(</span><span class="n">make_model</span><span class="p">(</span><span class="s2">"linear"</span><span class="p">),</span> <span class="n">b</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">X</span><span class="p">)))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">imp</span><span class="o">.</span><span class="n">impute</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">])</span>  <span class="c1"># zero correction = linear</span>
+<span class="go">array([0., 1., 2., 3., 4., 5.])</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
 
@@ -623,16 +861,37 @@ correlated; splitting them would leak information and overstate skill).</p>
 
     </div>
     <a class="headerlink" href="#MLImputer.fit"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="MLImputer.fit-155"><a href="#MLImputer.fit-155"><span class="linenos">155</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
-</span><span id="MLImputer.fit-156"><a href="#MLImputer.fit-156"><span class="linenos">156</span></a><span class="w">        </span><span class="sd">"""Fit the residual model and record the wall-clock training time."""</span>
-</span><span id="MLImputer.fit-157"><a href="#MLImputer.fit-157"><span class="linenos">157</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-</span><span id="MLImputer.fit-158"><a href="#MLImputer.fit-158"><span class="linenos">158</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
-</span><span id="MLImputer.fit-159"><a href="#MLImputer.fit-159"><span class="linenos">159</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">fit_seconds</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
-</span><span id="MLImputer.fit-160"><a href="#MLImputer.fit-160"><span class="linenos">160</span></a>        <span class="k">return</span> <span class="bp">self</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="MLImputer.fit-209"><a href="#MLImputer.fit-209"><span class="linenos">209</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+</span><span id="MLImputer.fit-210"><a href="#MLImputer.fit-210"><span class="linenos">210</span></a><span class="w">        </span><span class="sd">"""Fit the residual model and record the wall-clock training time.</span>
+</span><span id="MLImputer.fit-211"><a href="#MLImputer.fit-211"><span class="linenos">211</span></a>
+</span><span id="MLImputer.fit-212"><a href="#MLImputer.fit-212"><span class="linenos">212</span></a><span class="sd">        Args:</span>
+</span><span id="MLImputer.fit-213"><a href="#MLImputer.fit-213"><span class="linenos">213</span></a><span class="sd">            X: Feature table (from :func:`sensorfill.features.make_training_set`).</span>
+</span><span id="MLImputer.fit-214"><a href="#MLImputer.fit-214"><span class="linenos">214</span></a><span class="sd">            target: Residuals ``y_true - base`` for each row.</span>
+</span><span id="MLImputer.fit-215"><a href="#MLImputer.fit-215"><span class="linenos">215</span></a>
+</span><span id="MLImputer.fit-216"><a href="#MLImputer.fit-216"><span class="linenos">216</span></a><span class="sd">        Returns:</span>
+</span><span id="MLImputer.fit-217"><a href="#MLImputer.fit-217"><span class="linenos">217</span></a><span class="sd">            ``self``, so calls can be chained.</span>
+</span><span id="MLImputer.fit-218"><a href="#MLImputer.fit-218"><span class="linenos">218</span></a><span class="sd">        """</span>
+</span><span id="MLImputer.fit-219"><a href="#MLImputer.fit-219"><span class="linenos">219</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+</span><span id="MLImputer.fit-220"><a href="#MLImputer.fit-220"><span class="linenos">220</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+</span><span id="MLImputer.fit-221"><a href="#MLImputer.fit-221"><span class="linenos">221</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">fit_seconds</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
+</span><span id="MLImputer.fit-222"><a href="#MLImputer.fit-222"><span class="linenos">222</span></a>        <span class="k">return</span> <span class="bp">self</span>
 </span></pre></div>
 
 
             <div class="docstring"><p>Fit the residual model and record the wall-clock training time.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>X:</strong>  Feature table (from <code><a href="features.html#make_training_set">sensorfill.features.make_training_set()</a></code>).</li>
+<li><strong>target:</strong>  Residuals <code>y_true - base</code> for each row.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p><code>self</code>, so calls can be chained.</p>
+</blockquote>
 </div>
 
 
@@ -648,21 +907,53 @@ correlated; splitting them would leak information and overstate skill).</p>
 
     </div>
     <a class="headerlink" href="#MLImputer.impute"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="MLImputer.impute-162"><a href="#MLImputer.impute-162"><span class="linenos">162</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">impute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="MLImputer.impute-163"><a href="#MLImputer.impute-163"><span class="linenos">163</span></a><span class="w">        </span><span class="sd">"""Return a filled copy of ``y`` (edge gaps fall back to the baseline)."""</span>
-</span><span id="MLImputer.impute-164"><a href="#MLImputer.impute-164"><span class="linenos">164</span></a>        <span class="n">X</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">y_lin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">builder</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
-</span><span id="MLImputer.impute-165"><a href="#MLImputer.impute-165"><span class="linenos">165</span></a>        <span class="n">out</span> <span class="o">=</span> <span class="n">y_lin</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-</span><span id="MLImputer.impute-166"><a href="#MLImputer.impute-166"><span class="linenos">166</span></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
-</span><span id="MLImputer.impute-167"><a href="#MLImputer.impute-167"><span class="linenos">167</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">y_lin</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
-</span><span id="MLImputer.impute-168"><a href="#MLImputer.impute-168"><span class="linenos">168</span></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="MLImputer.impute-169"><a href="#MLImputer.impute-169"><span class="linenos">169</span></a>            <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span>
-</span><span id="MLImputer.impute-170"><a href="#MLImputer.impute-170"><span class="linenos">170</span></a>            <span class="n">miss</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
-</span><span id="MLImputer.impute-171"><a href="#MLImputer.impute-171"><span class="linenos">171</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">],</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>
-</span><span id="MLImputer.impute-172"><a href="#MLImputer.impute-172"><span class="linenos">172</span></a>        <span class="k">return</span> <span class="n">out</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="MLImputer.impute-224"><a href="#MLImputer.impute-224"><span class="linenos">224</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">impute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="MLImputer.impute-225"><a href="#MLImputer.impute-225"><span class="linenos">225</span></a><span class="w">        </span><span class="sd">"""Fill the gaps of a series.</span>
+</span><span id="MLImputer.impute-226"><a href="#MLImputer.impute-226"><span class="linenos">226</span></a>
+</span><span id="MLImputer.impute-227"><a href="#MLImputer.impute-227"><span class="linenos">227</span></a><span class="sd">        Args:</span>
+</span><span id="MLImputer.impute-228"><a href="#MLImputer.impute-228"><span class="linenos">228</span></a><span class="sd">            y: Series with NaNs on the builder's grid.</span>
+</span><span id="MLImputer.impute-229"><a href="#MLImputer.impute-229"><span class="linenos">229</span></a>
+</span><span id="MLImputer.impute-230"><a href="#MLImputer.impute-230"><span class="linenos">230</span></a><span class="sd">        Returns:</span>
+</span><span id="MLImputer.impute-231"><a href="#MLImputer.impute-231"><span class="linenos">231</span></a><span class="sd">            Filled copy of ``y``: baseline plus learned correction inside</span>
+</span><span id="MLImputer.impute-232"><a href="#MLImputer.impute-232"><span class="linenos">232</span></a><span class="sd">            interior gaps; edge gaps fall back to the baseline. Filled values</span>
+</span><span id="MLImputer.impute-233"><a href="#MLImputer.impute-233"><span class="linenos">233</span></a><span class="sd">            are clipped to :attr:`clip` if set; observed values are untouched.</span>
+</span><span id="MLImputer.impute-234"><a href="#MLImputer.impute-234"><span class="linenos">234</span></a>
+</span><span id="MLImputer.impute-235"><a href="#MLImputer.impute-235"><span class="linenos">235</span></a><span class="sd">        Raises:</span>
+</span><span id="MLImputer.impute-236"><a href="#MLImputer.impute-236"><span class="linenos">236</span></a><span class="sd">            ValueError: If ``y`` does not match the builder's grid length.</span>
+</span><span id="MLImputer.impute-237"><a href="#MLImputer.impute-237"><span class="linenos">237</span></a><span class="sd">        """</span>
+</span><span id="MLImputer.impute-238"><a href="#MLImputer.impute-238"><span class="linenos">238</span></a>        <span class="n">X</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">y_lin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">builder</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+</span><span id="MLImputer.impute-239"><a href="#MLImputer.impute-239"><span class="linenos">239</span></a>        <span class="n">out</span> <span class="o">=</span> <span class="n">y_lin</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+</span><span id="MLImputer.impute-240"><a href="#MLImputer.impute-240"><span class="linenos">240</span></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
+</span><span id="MLImputer.impute-241"><a href="#MLImputer.impute-241"><span class="linenos">241</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">y_lin</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+</span><span id="MLImputer.impute-242"><a href="#MLImputer.impute-242"><span class="linenos">242</span></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="MLImputer.impute-243"><a href="#MLImputer.impute-243"><span class="linenos">243</span></a>            <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip</span>
+</span><span id="MLImputer.impute-244"><a href="#MLImputer.impute-244"><span class="linenos">244</span></a>            <span class="n">miss</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+</span><span id="MLImputer.impute-245"><a href="#MLImputer.impute-245"><span class="linenos">245</span></a>            <span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">miss</span><span class="p">],</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>
+</span><span id="MLImputer.impute-246"><a href="#MLImputer.impute-246"><span class="linenos">246</span></a>        <span class="k">return</span> <span class="n">out</span>
 </span></pre></div>
 
 
-            <div class="docstring"><p>Return a filled copy of <code>y</code> (edge gaps fall back to the baseline).</p>
+            <div class="docstring"><p>Fill the gaps of a series.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>y:</strong>  Series with NaNs on the builder's grid.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>Filled copy of <code>y</code>: baseline plus learned correction inside
+  interior gaps; edge gaps fall back to the baseline. Filled values
+  are clipped to <code><a href="#MLImputer.clip">clip</a></code> if set; observed values are untouched.</p>
+</blockquote>
+
+<h6 id="raises">Raises:</h6>
+
+<ul>
+<li><strong>ValueError:</strong>  If <code>y</code> does not match the builder's grid length.</li>
+</ul>
 </div>
 
 

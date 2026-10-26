@@ -17,5 +17,9 @@ jobs:
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dev]"
-      - name: Run tests
-        run: python -m pytest tests -q
+      - name: Lint (ruff)
+        run: ruff check src tests scripts
+      - name: Run unit tests and docstring examples
+        run: python -m pytest
+      - name: Check the HTML documentation builds
+        run: python -m pdoc --docformat google --math -o /tmp/api sensorfill

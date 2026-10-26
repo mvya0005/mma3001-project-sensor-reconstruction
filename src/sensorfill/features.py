@@ -34,6 +34,15 @@ straight line between the anchors (:func:`sensorfill.interpolation.fill_linear_r
 Models therefore learn a *correction* to the best classical baseline;
 "no information" defaults to that baseline, and level shifts between training
 and test periods do not push tree models outside their training range.
+
+Example:
+    >>> import numpy as np, pandas as pd
+    >>> from sensorfill.features import GapFeatureBuilder
+    >>> ts = pd.date_range("2024-06-03", periods=8, freq="10min")
+    >>> y = np.array([400, 410, np.nan, np.nan, 440, 450, 460, 470], dtype=float)
+    >>> X, idx, base = GapFeatureBuilder(ts, use_neighbour_days=False, anchor_k=1).build(y)
+    >>> idx.tolist(), X["pos"].round(3).tolist(), base[2:4].tolist()
+    ([2, 3], [0.333, 0.667], [420.0, 430.0])
 """
 
 from __future__ import annotations
@@ -56,6 +65,18 @@ class GapFeatureBuilder:
         anchor_k: Observations averaged for each gap anchor.
         level_ref: Reference level subtracted from the anchors (training median).
         use_neighbour_days: Include the ``yday``/``tmrw`` features.
+
+    Attributes:
+        calendar: Calendar features for every grid point (time of day, day of
+            week, weekend flag), pre-computed once.
+        occ: Occupancy with NaN set to 0, or None.
+        occ_1h: Centred 1-hour rolling mean of ``occ`` (only when ``occ`` is given).
+        profile: Training profile values on the grid, or None.
+
+    Example:
+        >>> ts = pd.date_range("2024-06-03", periods=4, freq="10min")
+        >>> GapFeatureBuilder(ts, use_neighbour_days=False).feature_names[:5]
+        ['delta', 'level', 'pos', 'gap_len', 'dist']
     """
 
     def __init__(
@@ -68,6 +89,7 @@ class GapFeatureBuilder:
         level_ref: float = 0.0,
         use_neighbour_days: bool = True,
     ):
+        """Pre-compute the calendar and occupancy features for the whole grid."""
         self.ts = pd.DatetimeIndex(ts)
         self.n = len(self.ts)
         self.spd = steps_per_day
@@ -94,7 +116,12 @@ class GapFeatureBuilder:
 
     @property
     def feature_names(self) -> list[str]:
-        """Column names produced by :meth:`build` (order is fixed)."""
+        """Column names produced by :meth:`build`.
+
+        Returns:
+            The feature names in their fixed column order; which optional
+            groups appear depends on the constructor arguments.
+        """
         names = ["delta", "level", "pos", "gap_len", "dist"] + list(self.calendar.columns)
         if self.profile is not None:
             names.append("prof")
@@ -105,7 +132,11 @@ class GapFeatureBuilder:
         return names
 
     def _shape_anomaly(self, y, a, b, shift):
-        """Shape of ``y`` over the gap window shifted by ``shift`` steps, minus its own end-to-end line."""
+        """Shape of ``y`` over the gap window shifted by ``shift`` steps, minus its own end-to-end line.
+
+        Returns ``(anomaly, ok)``; ``ok`` is 0.0 (and the anomaly zeros) when
+        the shifted window leaves the series or is more than 20 % missing.
+        """
         lo, hi = a - 1 + shift, b + shift
         L = b - a
         if lo < 0 or hi >= y.size:
@@ -130,6 +161,13 @@ class GapFeatureBuilder:
 
         Raises:
             ValueError: If ``y`` has the wrong length.
+
+        Example:
+            >>> ts = pd.date_range("2024-06-03", periods=5, freq="10min")
+            >>> X, idx, _ = GapFeatureBuilder(ts, use_neighbour_days=False).build(
+            ...     [1.0, np.nan, 3.0, np.nan, 5.0])
+            >>> X.shape, idx.tolist()
+            ((2, 10), [1, 3])
         """
         y = np.asarray(y, dtype=float)
         if y.size != self.n:
@@ -202,16 +240,28 @@ def make_training_set(
         ``(X, target, groups)`` where ``target = y_true - base`` at hidden points
         and ``groups`` identifies the gap each row came from, so that
         cross-validation keeps a gap's (highly correlated) rows together.
+
+    Raises:
+        ValueError: If no gap of any requested length fits in ``y_true``.
+
+    Example:
+        >>> ts = pd.date_range("2024-06-03", periods=600, freq="10min")
+        >>> y = 500 + 50 * np.sin(np.arange(600) / 20)
+        >>> b = GapFeatureBuilder(ts, use_neighbour_days=False)
+        >>> X, target, groups = make_training_set(y, b, gap_lengths=(3, 6), n_draws=1, rng=0)
+        >>> len(X) == len(target) == len(groups)
+        True
     """
     rng = np.random.default_rng(rng)
     y_true = np.asarray(y_true, dtype=float)
     observed = ~np.isnan(y_true)
-    Xs, ts_, gs = [], [], []
+    Xs, targets, gs = [], [], []
     gid = 0
     for _ in range(n_draws):
         for L in gap_lengths:
             k = int(min(max_gaps_per_length, max(1, hidden_fraction * y_true.size / (L + 4))))
             mask = None
+            # If k gaps do not fit (long gaps on a short series), halve k until they do.
             while k > 0:
                 try:
                     mask = block_mask(observed, L, k, rng, margin=2, min_observed=0.8)
@@ -226,9 +276,11 @@ def make_training_set(
             keep = mask[idx]  # only artificially hidden points have ground truth
             X, idx = X[keep], idx[keep]
             Xs.append(X)
-            ts_.append(y_true[idx] - base[idx])
+            targets.append(y_true[idx] - base[idx])
             # Group id = gap id: a jump of more than 2 steps starts a new gap.
             g = gid + np.cumsum(np.concatenate([[True], np.diff(idx) > 2]))
             gs.append(g)
             gid = int(g.max()) + 1 if g.size else gid
-    return pd.concat(Xs, ignore_index=True), np.concatenate(ts_), np.concatenate(gs)
+    if not Xs:
+        raise ValueError("no artificial gap of the requested lengths fits in the training series")
+    return pd.concat(Xs, ignore_index=True), np.concatenate(targets), np.concatenate(gs)

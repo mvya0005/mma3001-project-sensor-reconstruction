@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
@@ -143,12 +143,21 @@ def load_env_long(path: str | Path, sensors: Iterable[str] | None = None) -> pd.
         ``ts`` (naive local datetime), ``variable`` (short alias), ``unit`` and
         ``value`` (float). Exact duplicate uploads are collapsed; if the same
         sensor, time and variable appear with different values the mean is kept.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+
+    Example:
+        >>> long = load_env_long("data/raw/5EnvSensor_MayToDec2024_180kRows.zip",
+        ...                      sensors=["6012002000869"])  # doctest: +SKIP
+        >>> long.columns.tolist()  # doctest: +SKIP
+        ['sensorid', 'time', 'ts', 'variable', 'unit', 'value']
     """
     raw = _read_csv_any(path, usecols=["sensorid", "jsondata"], dtype={"sensorid": str})
     if sensors is not None:
         raw = raw[raw["sensorid"].isin(set(map(str, sensors)))]
     records = []
-    for sid, js in zip(raw["sensorid"], raw["jsondata"]):
+    for sid, js in zip(raw["sensorid"], raw["jsondata"], strict=True):
         for name, unit, t, v in parse_env_json(js):
             records.append((sid, t, VARIABLE_ALIASES.get(name, name), unit, v))
     long = pd.DataFrame(records, columns=["sensorid", "time", "variable", "unit", "value"])
@@ -168,8 +177,16 @@ def apply_plausibility(df: pd.DataFrame, ranges: dict | None = None) -> tuple[pd
         ranges: ``{variable: (low, high)}``; defaults to :data:`PLAUSIBLE_RANGE`.
 
     Returns:
-        ``(cleaned, n_rejected)`` where ``n_rejected`` counts rejected readings
-        per variable.
+        ``(cleaned, n_rejected)`` where ``cleaned`` is a copy of ``df`` with
+        out-of-range readings set to NaN (they are not clipped, because a
+        clipped value would look like a real measurement) and ``n_rejected``
+        counts rejected readings per variable.
+
+    Example:
+        >>> df = pd.DataFrame({"co2": [420.0, 120.0, 900.0]})
+        >>> cleaned, n_bad = apply_plausibility(df)
+        >>> cleaned["co2"].tolist(), int(n_bad["co2"])
+        ([420.0, nan, 900.0], 1)
     """
     ranges = PLAUSIBLE_RANGE if ranges is None else ranges
     out = df.copy()
@@ -203,7 +220,8 @@ def env_to_grid(
         freq: Grid spacing (pandas offset alias). The sensors report every
             600 s, so ``"10min"`` keeps the native resolution.
         variables: Short variable names to keep.
-        start, end: Optional clipping of the grid (inclusive).
+        start: Optional first grid time (inclusive); defaults to the first reading.
+        end: Optional last grid time (inclusive); defaults to the last reading.
         clean: If True, apply :func:`apply_plausibility`.
 
     Returns:
@@ -212,6 +230,12 @@ def env_to_grid(
 
     Raises:
         ValueError: If the sensor has no readings in ``long``.
+
+    Example:
+        >>> long = pd.DataFrame({"sensorid": "1", "variable": "co2", "value": [400.0, 410.0],
+        ...                      "ts": pd.to_datetime(["2024-06-03 09:00", "2024-06-03 09:21"])})
+        >>> env_to_grid(long, "1", variables=["co2"])["co2"].tolist()
+        [400.0, nan, 410.0]
     """
     sub = long[(long["sensorid"] == str(sensorid)) & (long["variable"].isin(list(variables)))]
     if sub.empty:
@@ -238,6 +262,9 @@ def load_occupancy_events(path: str | Path) -> pd.DataFrame:
     Returns:
         DataFrame with ``floorspaceid`` (category), ``status`` (category),
         ``headcount`` (float32, persons) and ``ts`` (naive local datetime).
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
     """
     occ = _read_csv_any(
         path,
@@ -269,6 +296,11 @@ def time_weighted_step_mean(t_events: np.ndarray, values: np.ndarray, edges: np.
     Returns:
         Array of ``len(edges) - 1`` bin means (NaN before the first event or
         inside an outage).
+
+    Example:
+        >>> # 2 people from t=0 to t=30, then 0 people: the 0-60 s bin averages 1 person.
+        >>> time_weighted_step_mean([0.0, 30.0], [2.0, 0.0], np.array([0.0, 60.0]), max_hold=100)
+        array([1.])
     """
     t = np.asarray(t_events, dtype=float)
     v = np.asarray(values, dtype=float)
@@ -304,7 +336,8 @@ def occupancy_to_grid(
 
     Returns:
         Wide DataFrame (index ``ts``, one column per floor space, named by the
-        first 8 characters of its id) of mean headcount in persons.
+        first 8 characters of its id) of mean headcount in persons. Events
+        with a negative or implausibly large headcount are dropped first.
     """
     ev = events[(events["headcount"] >= 0) & (events["headcount"] <= max_headcount)]
     start, end = ev["ts"].min().floor(freq), ev["ts"].max().ceil(freq)
@@ -323,7 +356,20 @@ def occupancy_to_grid(
 
 
 def load_occupancy_grid(path: str | Path, freq: str = "10min") -> pd.DataFrame:
-    """Convenience wrapper: :func:`load_occupancy_events` then :func:`occupancy_to_grid`."""
+    """Load the occupancy export straight onto a regular grid.
+
+    Convenience wrapper: :func:`load_occupancy_events` then :func:`occupancy_to_grid`.
+
+    Args:
+        path: ``.csv`` or ``.zip`` of the occupancy export.
+        freq: Grid spacing; must match the environmental grid.
+
+    Returns:
+        Mean headcount per floor space per grid step (see :func:`occupancy_to_grid`).
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+    """
     return occupancy_to_grid(load_occupancy_events(path), freq=freq)
 
 
@@ -344,7 +390,21 @@ class GapStats:
     gap_lengths: np.ndarray
 
     def histogram(self, edges=(1, 2, 4, 7, 19, 37, 145, 1009, np.inf)) -> pd.Series:
-        """Count gaps by length bin (bins are ``[edges[i], edges[i+1])`` steps)."""
+        """Count gaps by length bin.
+
+        Args:
+            edges: Bin edges in grid steps; bins are ``[edges[i], edges[i+1])``.
+                The defaults at 10-min sampling separate single dropouts,
+                <1 h, <3 h, <6 h, <1 day, <1 week and longer outages.
+
+        Returns:
+            Series of gap counts indexed by length interval.
+
+        Example:
+            >>> g = GapStats(10, 4, 0.4, np.array([1, 1, 2]))
+            >>> g.histogram(edges=(1, 2, np.inf)).tolist()
+            [2, 1]
+        """
         cats = pd.cut(self.gap_lengths, bins=list(edges), right=False)
         return pd.Series(cats).value_counts().sort_index()
 
@@ -369,7 +429,19 @@ def gap_lengths(isnan: np.ndarray) -> np.ndarray:
 
 
 def audit_series(s: pd.Series) -> GapStats:
-    """Compute missingness statistics for one series on a regular grid."""
+    """Compute missingness statistics for one series on a regular grid.
+
+    Args:
+        s: Regularly sampled series where NaN marks a missing reading.
+
+    Returns:
+        A :class:`GapStats` record.
+
+    Example:
+        >>> st = audit_series(pd.Series([1.0, np.nan, np.nan, 4.0]))
+        >>> st.n_missing, st.frac_missing, st.gap_lengths.tolist()
+        (2, 0.5, [2])
+    """
     isnan = s.isna().to_numpy()
     return GapStats(len(s), int(isnan.sum()), float(isnan.mean()), gap_lengths(isnan))
 
@@ -386,12 +458,17 @@ def longest_observed_window(s: pd.Series, max_gap: int) -> pd.Series:
 
     Returns:
         The slice of ``s`` (trimmed so it starts and ends on observed values).
+
+    Example:
+        >>> s = pd.Series([1.0, np.nan, np.nan, np.nan, 2.0, 3.0, np.nan, 4.0, 5.0])
+        >>> longest_observed_window(s, max_gap=1).tolist()
+        [2.0, 3.0, nan, 4.0, 5.0]
     """
     isnan = s.isna().to_numpy()
     x = np.concatenate([[0], isnan.astype(np.int8), [0]])
     d = np.diff(x)
     starts, ends = np.flatnonzero(d == 1), np.flatnonzero(d == -1)
-    long_gaps = [(a, b) for a, b in zip(starts, ends) if b - a > max_gap]
+    long_gaps = [(a, b) for a, b in zip(starts, ends, strict=True) if b - a > max_gap]
     # Segment boundaries are the long gaps; choose the longest segment between them.
     cuts = [0] + [v for a, b in long_gaps for v in (a, b)] + [len(s)]
     segs = [(cuts[i], cuts[i + 1]) for i in range(0, len(cuts), 2)]

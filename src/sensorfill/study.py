@@ -33,12 +33,19 @@ import pandas as pd
 
 from .interpolation import daily_profile
 
+#: Main study sensor (Building 60, G.38), used for train/validation/test.
 PRIMARY_SENSOR = "6012002000869"
+#: Second sensor in a different room and year, used only as an external test.
 SECONDARY_SENSOR = "6012002000326"
+#: First timestamp of the validation period (training is everything before).
 TRAIN_END = "2024-05-01"
+#: First timestamp of the test period (validation is everything before).
 VAL_END = "2024-05-22"
+#: Floor-space ids (first 8 characters) summed into the occupancy proxy.
 OCC_PROXY_SPACES = ["0f3f37f8", "941f0352", "227f1068", "cca1ac3e"]
+#: Number of 10-min grid steps in one day.
 STEPS_PER_DAY = 144
+#: Grid spacing in hours (10 min).
 DT_HOURS = 1 / 6
 #: Artificial gap lengths used throughout, in 10-min steps (10 min ... 24 h).
 GAP_LENGTHS = (1, 3, 6, 18, 36, 72, 144)
@@ -68,25 +75,56 @@ class Study:
     unit: str
 
     def part(self, name: str):
-        """Return ``(y, ts, occ)`` restricted to one split."""
+        """Return the data of one split.
+
+        Args:
+            name: ``"train"``, ``"val"`` or ``"test"``.
+
+        Returns:
+            ``(y, ts, occ)`` restricted to that split (``occ`` is None when
+            the study has no occupancy proxy).
+
+        Example:
+            >>> st = Study(np.arange(4.0), pd.date_range("2024-01-01", periods=4, freq="10min"),
+            ...            None, np.array(["train", "train", "val", "test"]), "co2", "ppm")
+            >>> st.part("train")[0].tolist()
+            [0.0, 1.0]
+        """
         m = self.split == name
         return self.y[m], self.ts[m], None if self.occ is None else self.occ[m]
 
     @property
     def train_profile(self) -> pd.Series:
-        """Typical-day profile computed on the training period only (no leakage)."""
+        """Typical-day profile computed on the training period only (no leakage).
+
+        Returns:
+            Median value per (weekend flag, minute of day), as returned by
+            :func:`sensorfill.interpolation.daily_profile`.
+        """
         y, ts, _ = self.part("train")
         return daily_profile(y, ts)
 
     def profile_values(self, ts) -> np.ndarray:
-        """Evaluate :attr:`train_profile` on arbitrary timestamps."""
+        """Evaluate :attr:`train_profile` on arbitrary timestamps.
+
+        Args:
+            ts: Timestamps (any array-like accepted by ``pd.DatetimeIndex``).
+
+        Returns:
+            The typical-day value for each timestamp (NaN for a time of day
+            never seen in training).
+        """
         ts = pd.DatetimeIndex(ts)
         keys = pd.MultiIndex.from_arrays([ts.dayofweek >= 5, ts.hour * 60 + ts.minute])
         return self.train_profile.reindex(keys).to_numpy()
 
     @property
     def level_ref(self) -> float:
-        """Median of the training target (reference level for ML features)."""
+        """Median of the training target (reference level for ML features).
+
+        Returns:
+            ``nanmedian`` of the training-split target, in the target's units.
+        """
         return float(np.nanmedian(self.part("train")[0]))
 
 
@@ -104,6 +142,11 @@ def load_study(processed: str | Path = "data/processed", variable: str = "co2", 
 
     Raises:
         FileNotFoundError: If preprocessing has not been run.
+
+    Example:
+        >>> st = load_study("data/processed", "co2")  # doctest: +SKIP
+        >>> st.unit, sorted(set(st.split))  # doctest: +SKIP
+        ('ppm', ['test', 'train', 'val'])
     """
     from .data import UNITS
 

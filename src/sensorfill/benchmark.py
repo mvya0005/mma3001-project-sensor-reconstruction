@@ -5,6 +5,16 @@ A *method* is any callable ``f(y_masked, ctx) -> y_filled`` where ``ctx`` is a
 the training period. :func:`run_benchmark` hides blocks of observed data in
 the evaluation series, calls each method, and records accuracy, runtime and
 peak memory per gap length and repeat.
+
+Example:
+    >>> import numpy as np, pandas as pd
+    >>> from sensorfill.benchmark import Context, classical_methods, run_benchmark, summarise
+    >>> ts = pd.date_range("2024-06-03", periods=288, freq="10min")
+    >>> y = 500 + 100 * np.sin(2 * np.pi * np.arange(288) / 144)
+    >>> methods = {k: v for k, v in classical_methods().items() if k in ("LOCF", "Linear")}
+    >>> res = run_benchmark(y, Context(ts), methods, gap_lengths=(6,), n_gaps=5, repeats=2)
+    >>> summarise(res).index.tolist()  # best (lowest RMSE) first
+    ['Linear', 'LOCF']
 """
 
 from __future__ import annotations
@@ -12,7 +22,7 @@ from __future__ import annotations
 import time
 import tracemalloc
 from dataclasses import dataclass, field
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -44,36 +54,63 @@ class Context:
 
     @property
     def midnight_offset(self) -> int:
-        """Index of the first point at 00:00 (needed to fold into days)."""
+        """Index of the first point at 00:00 (needed to fold into days).
+
+        Returns:
+            The index, or 0 if no timestamp falls exactly at midnight.
+        """
         ts = pd.DatetimeIndex(self.ts)
         mins = ts.hour * 60 + ts.minute
         return int(np.argmax(mins == 0)) if (mins == 0).any() else 0
 
 
 def svd_method(rank: int = 3) -> Callable:
-    """Wrap :func:`sensorfill.linalg.svd_impute` as a benchmark method."""
+    """Wrap :func:`sensorfill.linalg.svd_impute` as a benchmark method.
+
+    Args:
+        rank: Number of singular components kept.
+
+    Returns:
+        A method ``f(y, ctx)`` that folds ``y`` into days, completes the
+        matrix, unfolds it and keeps every observed value unchanged.
+    """
 
     def f(y, ctx: Context):
+        """Fill ``y`` by rank-``rank`` completion of its day x time-of-day matrix."""
         off = ctx.midnight_offset
         M = fold_daily(y, ctx.steps_per_day, off)
-        # Rows that are entirely missing carry no information; fill them later by linear interpolation.
         filled = svd_impute(M, rank=rank)
         out = unfold_daily(filled, len(y), off)
         out[~np.isnan(y)] = y[~np.isnan(y)]
+        # Safety net: anything SVD could not reach is bridged linearly.
         return itp.fill_linear(out) if np.isnan(out).any() else out
 
     return f
 
 
 def hybrid_method(short: Callable, long: Callable, max_short: int) -> Callable:
-    """Combine two methods by gap length: ``short`` for gaps of at most ``max_short`` steps, else ``long``.
+    """Combine two methods by gap length.
 
     Both methods see the same input; their outputs are merged gap by gap. This
     is the "policy" form of the final recommendation, where the threshold is
     chosen on validation data.
+
+    Args:
+        short: Method used for gaps of at most ``max_short`` steps.
+        long: Method used for longer gaps.
+        max_short: Threshold gap length in steps.
+
+    Returns:
+        A combined method ``f(y, ctx)``.
+
+    Example:
+        >>> m = hybrid_method(lambda y, c: itp.fill_locf(y), lambda y, c: itp.fill_linear(y), 1)
+        >>> m(np.array([0.0, np.nan, 2.0, np.nan, np.nan, 5.0]), None)
+        array([0., 0., 2., 3., 4., 5.])
     """
 
     def f(y, ctx: Context):
+        """Run both methods and take each gap's fill from the one its length selects."""
         a, b = short(y, ctx), long(y, ctx)
         out = a.copy()
         for s0, s1 in itp.gap_spans(np.isnan(y)):
@@ -85,7 +122,12 @@ def hybrid_method(short: Callable, long: Callable, max_short: int) -> Callable:
 
 
 def classical_methods() -> dict[str, Callable]:
-    """The training-free methods, keyed by display name."""
+    """The training-free methods, keyed by display name.
+
+    Returns:
+        ``{name: f(y, ctx)}`` for every classical method compared in notebooks
+        01-02 and 06. Settings are the ones selected on validation data.
+    """
     return {
         "LOCF": lambda y, c: itp.fill_locf(y),
         "Linear": lambda y, c: itp.fill_linear(y),
@@ -127,7 +169,13 @@ def run_benchmark(
 
     Returns:
         Long table with one row per (method, gap length, repeat) and columns
-        ``method, gap_len, repeat, mae, rmse, bias, max_err, r2, n, seconds, peak_mb``.
+        ``method, gap_len, repeat, n_gaps, seconds, peak_mb, error`` and the
+        metrics of :func:`sensorfill.metrics.evaluate`. A method that raises is
+        recorded with its exception in ``error`` and NaN metrics, so one
+        failure cannot stop the whole benchmark.
+
+    Raises:
+        ValueError: If not even one gap of some length fits in ``y_true``.
     """
     y_true = np.asarray(y_true, dtype=float)
     rows = []
@@ -135,6 +183,7 @@ def run_benchmark(
         for L in gap_lengths:
             rng = np.random.default_rng(seed + 1000 * r + L)
             k = n_gaps
+            # Halve the number of gaps until they fit (long gaps on short series).
             while True:
                 try:
                     mask = block_mask(~np.isnan(y_true), L, k, rng, margin=2, min_observed=min_observed)
@@ -165,10 +214,23 @@ def run_benchmark(
 
 
 def confidence_table(results: pd.DataFrame, metric: str = "rmse") -> pd.DataFrame:
-    """Mean and 95 % t-interval half-width of ``metric`` across repeats, per method and gap length.
+    """Mean and 95 % t-interval of ``metric`` across repeats.
 
     Repeats use independent mask draws, so their spread measures how much the
     score depends on *which* gaps were hidden.
+
+    Args:
+        results: Output of :func:`run_benchmark`.
+        metric: Column to summarise.
+
+    Returns:
+        Table indexed by ``(method, gap_len)`` with ``mean``, ``ci95`` (the
+        half-width of the Student-t interval) and ``n_repeats``.
+
+    Example:
+        >>> res = pd.DataFrame({"method": "A", "gap_len": 6, "rmse": [1.0, 2.0, 3.0]})
+        >>> float(confidence_table(res).loc[("A", 6), "mean"])
+        2.0
     """
     from scipy import stats
 
@@ -179,7 +241,20 @@ def confidence_table(results: pd.DataFrame, metric: str = "rmse") -> pd.DataFram
 
 
 def summarise(results: pd.DataFrame, metric: str = "rmse") -> pd.DataFrame:
-    """Pivot to ``method x gap_len`` mean of ``metric`` (lower is better)."""
+    """Pivot results into a ``method x gap_len`` table of mean ``metric``.
+
+    Args:
+        results: Output of :func:`run_benchmark`.
+        metric: Column to average (lower is better for all error metrics).
+
+    Returns:
+        Table sorted so the best method at the longest gap length comes first.
+
+    Example:
+        >>> res = pd.DataFrame({"method": ["A", "B"], "gap_len": [6, 6], "rmse": [2.0, 1.0]})
+        >>> summarise(res).index.tolist()
+        ['B', 'A']
+    """
     return results.pivot_table(index="method", columns="gap_len", values=metric, aggfunc="mean").sort_values(
         results["gap_len"].max()
     )

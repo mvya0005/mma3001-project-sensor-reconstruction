@@ -13,6 +13,11 @@ from gap-aware features (:mod:`sensorfill.features`). Models:
 Hyperparameters are selected by grouped K-fold cross-validation in which all
 rows from one gap stay in the same fold (rows inside a gap are strongly
 correlated; splitting them would leak information and overstate skill).
+
+Example:
+    >>> from sensorfill.ml import make_model
+    >>> list(make_model("ridge").named_steps)
+    ['scale', 'reg']
 """
 
 from __future__ import annotations
@@ -44,6 +49,13 @@ def make_model(name: str, random_state: int = 0, **params) -> Pipeline:
 
     Returns:
         Unfitted :class:`~sklearn.pipeline.Pipeline` whose last step is named ``"reg"``.
+
+    Raises:
+        ValueError: If ``name`` is not a known model.
+
+    Example:
+        >>> make_model("tree", max_depth=3).named_steps["reg"].max_depth
+        3
     """
     if name == "linear":
         reg = LinearRegression(**params)
@@ -89,7 +101,28 @@ PARAM_GRIDS = {
 
 
 def subsample(X, y, groups, max_rows: int | None, rng=0):
-    """Randomly keep whole gaps until ``max_rows`` rows (SVR training is O(n^2)-O(n^3))."""
+    """Randomly keep whole gaps until at least ``max_rows`` rows are kept.
+
+    Needed because SVR training costs O(n^2)-O(n^3) in the number of rows.
+    Whole gaps are kept (never split) so grouped cross-validation stays valid.
+
+    Args:
+        X: Feature table.
+        y: Targets, one per row of ``X``.
+        groups: Gap id of each row.
+        max_rows: Row budget; ``None`` keeps everything.
+        rng: Seed or generator.
+
+    Returns:
+        ``(X, y, groups)`` restricted to the kept gaps.
+
+    Example:
+        >>> X = pd.DataFrame({"a": range(6)})
+        >>> y = np.arange(6.0)
+        >>> g = np.array([0, 0, 1, 1, 2, 2])
+        >>> len(subsample(X, y, g, max_rows=3)[1])
+        4
+    """
     if max_rows is None or len(y) <= max_rows:
         return X, y, groups
     rng = np.random.default_rng(rng)
@@ -110,7 +143,9 @@ def tune(name: str, X, y, groups, n_splits: int = 5, max_rows: int | None = None
 
     Args:
         name: Model name (see :func:`make_model`).
-        X, y, groups: Training set from :func:`sensorfill.features.make_training_set`.
+        X: Feature table from :func:`sensorfill.features.make_training_set`.
+        y: Residual targets from the same call.
+        groups: Gap ids from the same call (keep a gap's rows in one fold).
         n_splits: Number of folds.
         max_rows: Optional row cap (whole gaps kept) for expensive models.
         grid: Override of :data:`PARAM_GRIDS`.
@@ -119,6 +154,17 @@ def tune(name: str, X, y, groups, n_splits: int = 5, max_rows: int | None = None
     Returns:
         Fitted :class:`~sklearn.model_selection.GridSearchCV` (``best_estimator_``
         is refit on the full, possibly subsampled, training set).
+
+    Raises:
+        KeyError: If ``name`` has no default grid and ``grid`` is None.
+
+    Example:
+        >>> rng = np.random.default_rng(0)
+        >>> X = pd.DataFrame({"a": rng.normal(size=60)})
+        >>> y = 2 * X["a"].to_numpy()
+        >>> gs = tune("ridge", X, y, np.repeat(np.arange(12), 5), n_splits=3)
+        >>> gs.best_params_
+        {'reg__alpha': 0.1}
     """
     X, y, groups = subsample(X, y, groups, max_rows, rng)
     grid = PARAM_GRIDS[name] if grid is None else grid
@@ -144,6 +190,14 @@ class MLImputer:
         builder: Feature builder for the grid being imputed.
         clip: Optional ``(low, high)`` physical limits applied to filled values.
         fit_seconds: Training time recorded by :meth:`fit`.
+
+    Example:
+        >>> ts = pd.date_range("2024-06-03", periods=6, freq="10min")
+        >>> b = GapFeatureBuilder(ts, use_neighbour_days=False, anchor_k=1)
+        >>> X, _, _ = b.build([0.0, np.nan, 2.0, np.nan, 4.0, 5.0])
+        >>> imp = MLImputer(make_model("linear"), b).fit(X, np.zeros(len(X)))
+        >>> imp.impute([0.0, np.nan, 2.0, np.nan, 4.0, 5.0])  # zero correction = linear
+        array([0., 1., 2., 3., 4., 5.])
     """
 
     model: object
@@ -152,14 +206,34 @@ class MLImputer:
     fit_seconds: float = field(default=0.0)
 
     def fit(self, X, target):
-        """Fit the residual model and record the wall-clock training time."""
+        """Fit the residual model and record the wall-clock training time.
+
+        Args:
+            X: Feature table (from :func:`sensorfill.features.make_training_set`).
+            target: Residuals ``y_true - base`` for each row.
+
+        Returns:
+            ``self``, so calls can be chained.
+        """
         t0 = time.perf_counter()
         self.model.fit(X, target)
         self.fit_seconds = time.perf_counter() - t0
         return self
 
     def impute(self, y) -> np.ndarray:
-        """Return a filled copy of ``y`` (edge gaps fall back to the baseline)."""
+        """Fill the gaps of a series.
+
+        Args:
+            y: Series with NaNs on the builder's grid.
+
+        Returns:
+            Filled copy of ``y``: baseline plus learned correction inside
+            interior gaps; edge gaps fall back to the baseline. Filled values
+            are clipped to :attr:`clip` if set; observed values are untouched.
+
+        Raises:
+            ValueError: If ``y`` does not match the builder's grid length.
+        """
         X, idx, y_lin = self.builder.build(y)
         out = y_lin.copy()
         if len(idx):

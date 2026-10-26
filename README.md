@@ -1,5 +1,7 @@
 # Reconstructing missing building-sensor measurements
 
+[![tests](https://github.com/mvya0005/mma3001-project-sensor-reconstruction/actions/workflows/tests.yml/badge.svg)](https://github.com/mvya0005/mma3001-project-sensor-reconstruction/actions/workflows/tests.yml)
+
 **MMA3001 Numerical Methods and Machine Learning, individual project (Dataset 2: Monash Smart Infrastructure occupancy and environmental data).**
 
 Wireless indoor-air sensors drop readings, from single lost packets to multi-day outages. This project builds and validates a library, `sensorfill`, and a set of Colab notebooks that reconstruct missing 10-minute CO₂ and temperature readings. It compares classical numerical methods, a physics-based (mass-balance ODE) model, and machine-learning and deep-learning models on identical, withheld ground truth. The result is an evidence-based policy for which method a building management system should use for each gap length.
@@ -21,7 +23,7 @@ Wireless indoor-air sensors drop readings, from single lost packets to multi-day
 * **Long gaps (12–24 h):** only the BiGRU beat linear on both validation and test (24 h on test: 21.4 vs 24.3 ppm, about 12 % lower, with intervals that just overlap). Longer GPU training did not improve it, because it over-fits the 9 weeks of training data after one or two epochs. More data, not more compute, is the limit.
 * **Temperature:** the day-coupled Laplace fill cuts the 24-h error from 1.4 to 0.6 °C.
 * **Engineering indicator:** with a 6-h working-hours gap, even the best fill misstates a day's CO₂ dose by up to 15–20 % (RMS 7–8 %).
-* **Verification:** 87 tests pass, including convergence orders, stability limits and analytical solutions ([test report](reports/tests/test_report.html)).
+* **Verification:** 87 unit tests and 103 runnable docstring examples pass, including convergence orders, stability limits and analytical solutions ([test report](reports/tests/test_report.html)).
 
 Full tables: `reports/test_results.csv` and notebook 06.
 
@@ -97,6 +99,23 @@ bash scripts/run_tests.sh                              # writes reports/tests/te
 bash scripts/build_docs.sh                             # writes docs/api/index.html
 ```
 
+If you prefer not to install the package in editable mode, `pip install -r requirements.txt` installs the same dependencies; then run commands from the repository root with `PYTHONPATH=src`.
+
+### Using the library on your own series
+Every fill method takes a 1-D array on a regular grid with `NaN` where data is missing, and returns a filled copy; observed values are never changed.
+
+```python
+import numpy as np
+from sensorfill.interpolation import fill_linear
+from sensorfill.masking import block_mask, apply_mask
+from sensorfill.metrics import evaluate
+
+y = np.load("my_co2_series.npy")                           # 10-min CO2 [ppm], NaN = missing
+hide = block_mask(~np.isnan(y), gap_len=36, n_gaps=20, rng=0)  # hide 20 x 6-h blocks of real data
+y_hat = fill_linear(apply_mask(y, hide))                   # reconstruct them
+print(evaluate(y, y_hat, hide))                            # MAE, RMSE, bias, max error, R^2 on hidden points
+```
+
 Everything is seeded (mask draws, model initialisation, data augmentation), so re-running gives the same tables, except for GPU non-determinism in notebook 05, which is quantified by training over several seeds.
 
 ## 5. Methods and where each unit topic is used
@@ -127,9 +146,11 @@ Everything is seeded (mask draws, model initialisation, data augmentation), so r
 
 ## 7. Tests and documentation
 
-* `bash scripts/run_tests.sh` runs the pytest suite and writes `reports/tests/test_report.html`. The tests verify against analytical results: exact polynomial reproduction, spline O(h⁴), FD O(h)/O(h²), integrator orders 1/2/4, FTCS stability limit, SOR speed-up, parameter recovery, Romberg to machine precision and Gauss exactness.
+* `bash scripts/run_tests.sh` runs the pytest suite and writes `reports/tests/test_report.html`. The 87 unit tests verify against analytical results: exact polynomial reproduction, spline O(h⁴), FD O(h)/O(h²), integrator orders 1/2/4, FTCS stability limit, SOR speed-up, parameter recovery, Romberg to machine precision and Gauss exactness. Each test has a one-line docstring stating what it proves.
+* Every public function and class has a Google-style docstring with `Args`, `Returns`, `Raises` and a runnable `Example`. Pytest runs those 103 examples as doctests, so the documented usage cannot drift away from the code.
 * `bash scripts/build_docs.sh` regenerates the HTML API documentation (`docs/api/index.html`) from the docstrings.
-* GitHub Actions runs the tests on every push (`.github/workflows/tests.yml`).
+* Code style is checked with `ruff check src tests scripts` (configuration in `pyproject.toml`).
+* GitHub Actions lints the code, runs the unit tests and doctests, and checks that the HTML documentation builds on every push (`.github/workflows/tests.yml`).
 
 ## 8. AI use
 

@@ -204,95 +204,138 @@ any occupancy space).</li>
 </span><span id="L-33"><a href="#L-33"><span class="linenos"> 33</span></a>
 </span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.interpolation</span><span class="w"> </span><span class="kn">import</span> <span class="n">daily_profile</span>
 </span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a>
-</span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a><span class="n">PRIMARY_SENSOR</span> <span class="o">=</span> <span class="s2">"6012002000869"</span>
-</span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a><span class="n">SECONDARY_SENSOR</span> <span class="o">=</span> <span class="s2">"6012002000326"</span>
-</span><span id="L-38"><a href="#L-38"><span class="linenos"> 38</span></a><span class="n">TRAIN_END</span> <span class="o">=</span> <span class="s2">"2024-05-01"</span>
-</span><span id="L-39"><a href="#L-39"><span class="linenos"> 39</span></a><span class="n">VAL_END</span> <span class="o">=</span> <span class="s2">"2024-05-22"</span>
-</span><span id="L-40"><a href="#L-40"><span class="linenos"> 40</span></a><span class="n">OCC_PROXY_SPACES</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"0f3f37f8"</span><span class="p">,</span> <span class="s2">"941f0352"</span><span class="p">,</span> <span class="s2">"227f1068"</span><span class="p">,</span> <span class="s2">"cca1ac3e"</span><span class="p">]</span>
-</span><span id="L-41"><a href="#L-41"><span class="linenos"> 41</span></a><span class="n">STEPS_PER_DAY</span> <span class="o">=</span> <span class="mi">144</span>
-</span><span id="L-42"><a href="#L-42"><span class="linenos"> 42</span></a><span class="n">DT_HOURS</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="mi">6</span>
-</span><span id="L-43"><a href="#L-43"><span class="linenos"> 43</span></a><span class="c1">#: Artificial gap lengths used throughout, in 10-min steps (10 min ... 24 h).</span>
-</span><span id="L-44"><a href="#L-44"><span class="linenos"> 44</span></a><span class="n">GAP_LENGTHS</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">18</span><span class="p">,</span> <span class="mi">36</span><span class="p">,</span> <span class="mi">72</span><span class="p">,</span> <span class="mi">144</span><span class="p">)</span>
-</span><span id="L-45"><a href="#L-45"><span class="linenos"> 45</span></a><span class="c1">#: Masking protocol of the one-off final test evaluation (identical for every method,</span>
-</span><span id="L-46"><a href="#L-46"><span class="linenos"> 46</span></a><span class="c1">#: including the GPU models scored in notebook 05).</span>
-</span><span id="L-47"><a href="#L-47"><span class="linenos"> 47</span></a><span class="n">FINAL_PROTOCOL</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"gap_lengths"</span><span class="p">:</span> <span class="n">GAP_LENGTHS</span><span class="p">,</span> <span class="s2">"n_gaps"</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span> <span class="s2">"repeats"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">"seed"</span><span class="p">:</span> <span class="mi">2024</span><span class="p">}</span>
-</span><span id="L-48"><a href="#L-48"><span class="linenos"> 48</span></a>
-</span><span id="L-49"><a href="#L-49"><span class="linenos"> 49</span></a>
-</span><span id="L-50"><a href="#L-50"><span class="linenos"> 50</span></a><span class="nd">@dataclass</span>
-</span><span id="L-51"><a href="#L-51"><span class="linenos"> 51</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Study</span><span class="p">:</span>
-</span><span id="L-52"><a href="#L-52"><span class="linenos"> 52</span></a><span class="w">    </span><span class="sd">"""One target variable of one sensor, with splits and context.</span>
-</span><span id="L-53"><a href="#L-53"><span class="linenos"> 53</span></a>
-</span><span id="L-54"><a href="#L-54"><span class="linenos"> 54</span></a><span class="sd">    Attributes:</span>
-</span><span id="L-55"><a href="#L-55"><span class="linenos"> 55</span></a><span class="sd">        y: Target series (NaN = missing) on the 10-min grid.</span>
-</span><span id="L-56"><a href="#L-56"><span class="linenos"> 56</span></a><span class="sd">        ts: Timestamps.</span>
-</span><span id="L-57"><a href="#L-57"><span class="linenos"> 57</span></a><span class="sd">        occ: Occupancy proxy [persons] or None.</span>
-</span><span id="L-58"><a href="#L-58"><span class="linenos"> 58</span></a><span class="sd">        split: Array of ``"train"``, ``"val"`` or ``"test"`` labels.</span>
-</span><span id="L-59"><a href="#L-59"><span class="linenos"> 59</span></a><span class="sd">        variable: Target name (e.g. ``"co2"``).</span>
-</span><span id="L-60"><a href="#L-60"><span class="linenos"> 60</span></a><span class="sd">        unit: Target unit.</span>
-</span><span id="L-61"><a href="#L-61"><span class="linenos"> 61</span></a><span class="sd">    """</span>
-</span><span id="L-62"><a href="#L-62"><span class="linenos"> 62</span></a>
-</span><span id="L-63"><a href="#L-63"><span class="linenos"> 63</span></a>    <span class="n">y</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-</span><span id="L-64"><a href="#L-64"><span class="linenos"> 64</span></a>    <span class="n">ts</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span>
-</span><span id="L-65"><a href="#L-65"><span class="linenos"> 65</span></a>    <span class="n">occ</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>
-</span><span id="L-66"><a href="#L-66"><span class="linenos"> 66</span></a>    <span class="n">split</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-</span><span id="L-67"><a href="#L-67"><span class="linenos"> 67</span></a>    <span class="n">variable</span><span class="p">:</span> <span class="nb">str</span>
-</span><span id="L-68"><a href="#L-68"><span class="linenos"> 68</span></a>    <span class="n">unit</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a><span class="c1">#: Main study sensor (Building 60, G.38), used for train/validation/test.</span>
+</span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a><span class="n">PRIMARY_SENSOR</span> <span class="o">=</span> <span class="s2">"6012002000869"</span>
+</span><span id="L-38"><a href="#L-38"><span class="linenos"> 38</span></a><span class="c1">#: Second sensor in a different room and year, used only as an external test.</span>
+</span><span id="L-39"><a href="#L-39"><span class="linenos"> 39</span></a><span class="n">SECONDARY_SENSOR</span> <span class="o">=</span> <span class="s2">"6012002000326"</span>
+</span><span id="L-40"><a href="#L-40"><span class="linenos"> 40</span></a><span class="c1">#: First timestamp of the validation period (training is everything before).</span>
+</span><span id="L-41"><a href="#L-41"><span class="linenos"> 41</span></a><span class="n">TRAIN_END</span> <span class="o">=</span> <span class="s2">"2024-05-01"</span>
+</span><span id="L-42"><a href="#L-42"><span class="linenos"> 42</span></a><span class="c1">#: First timestamp of the test period (validation is everything before).</span>
+</span><span id="L-43"><a href="#L-43"><span class="linenos"> 43</span></a><span class="n">VAL_END</span> <span class="o">=</span> <span class="s2">"2024-05-22"</span>
+</span><span id="L-44"><a href="#L-44"><span class="linenos"> 44</span></a><span class="c1">#: Floor-space ids (first 8 characters) summed into the occupancy proxy.</span>
+</span><span id="L-45"><a href="#L-45"><span class="linenos"> 45</span></a><span class="n">OCC_PROXY_SPACES</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"0f3f37f8"</span><span class="p">,</span> <span class="s2">"941f0352"</span><span class="p">,</span> <span class="s2">"227f1068"</span><span class="p">,</span> <span class="s2">"cca1ac3e"</span><span class="p">]</span>
+</span><span id="L-46"><a href="#L-46"><span class="linenos"> 46</span></a><span class="c1">#: Number of 10-min grid steps in one day.</span>
+</span><span id="L-47"><a href="#L-47"><span class="linenos"> 47</span></a><span class="n">STEPS_PER_DAY</span> <span class="o">=</span> <span class="mi">144</span>
+</span><span id="L-48"><a href="#L-48"><span class="linenos"> 48</span></a><span class="c1">#: Grid spacing in hours (10 min).</span>
+</span><span id="L-49"><a href="#L-49"><span class="linenos"> 49</span></a><span class="n">DT_HOURS</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="mi">6</span>
+</span><span id="L-50"><a href="#L-50"><span class="linenos"> 50</span></a><span class="c1">#: Artificial gap lengths used throughout, in 10-min steps (10 min ... 24 h).</span>
+</span><span id="L-51"><a href="#L-51"><span class="linenos"> 51</span></a><span class="n">GAP_LENGTHS</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">18</span><span class="p">,</span> <span class="mi">36</span><span class="p">,</span> <span class="mi">72</span><span class="p">,</span> <span class="mi">144</span><span class="p">)</span>
+</span><span id="L-52"><a href="#L-52"><span class="linenos"> 52</span></a><span class="c1">#: Masking protocol of the one-off final test evaluation (identical for every method,</span>
+</span><span id="L-53"><a href="#L-53"><span class="linenos"> 53</span></a><span class="c1">#: including the GPU models scored in notebook 05).</span>
+</span><span id="L-54"><a href="#L-54"><span class="linenos"> 54</span></a><span class="n">FINAL_PROTOCOL</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"gap_lengths"</span><span class="p">:</span> <span class="n">GAP_LENGTHS</span><span class="p">,</span> <span class="s2">"n_gaps"</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span> <span class="s2">"repeats"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">"seed"</span><span class="p">:</span> <span class="mi">2024</span><span class="p">}</span>
+</span><span id="L-55"><a href="#L-55"><span class="linenos"> 55</span></a>
+</span><span id="L-56"><a href="#L-56"><span class="linenos"> 56</span></a>
+</span><span id="L-57"><a href="#L-57"><span class="linenos"> 57</span></a><span class="nd">@dataclass</span>
+</span><span id="L-58"><a href="#L-58"><span class="linenos"> 58</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Study</span><span class="p">:</span>
+</span><span id="L-59"><a href="#L-59"><span class="linenos"> 59</span></a><span class="w">    </span><span class="sd">"""One target variable of one sensor, with splits and context.</span>
+</span><span id="L-60"><a href="#L-60"><span class="linenos"> 60</span></a>
+</span><span id="L-61"><a href="#L-61"><span class="linenos"> 61</span></a><span class="sd">    Attributes:</span>
+</span><span id="L-62"><a href="#L-62"><span class="linenos"> 62</span></a><span class="sd">        y: Target series (NaN = missing) on the 10-min grid.</span>
+</span><span id="L-63"><a href="#L-63"><span class="linenos"> 63</span></a><span class="sd">        ts: Timestamps.</span>
+</span><span id="L-64"><a href="#L-64"><span class="linenos"> 64</span></a><span class="sd">        occ: Occupancy proxy [persons] or None.</span>
+</span><span id="L-65"><a href="#L-65"><span class="linenos"> 65</span></a><span class="sd">        split: Array of ``"train"``, ``"val"`` or ``"test"`` labels.</span>
+</span><span id="L-66"><a href="#L-66"><span class="linenos"> 66</span></a><span class="sd">        variable: Target name (e.g. ``"co2"``).</span>
+</span><span id="L-67"><a href="#L-67"><span class="linenos"> 67</span></a><span class="sd">        unit: Target unit.</span>
+</span><span id="L-68"><a href="#L-68"><span class="linenos"> 68</span></a><span class="sd">    """</span>
 </span><span id="L-69"><a href="#L-69"><span class="linenos"> 69</span></a>
-</span><span id="L-70"><a href="#L-70"><span class="linenos"> 70</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">part</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-</span><span id="L-71"><a href="#L-71"><span class="linenos"> 71</span></a><span class="w">        </span><span class="sd">"""Return ``(y, ts, occ)`` restricted to one split."""</span>
-</span><span id="L-72"><a href="#L-72"><span class="linenos"> 72</span></a>        <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">split</span> <span class="o">==</span> <span class="n">name</span>
-</span><span id="L-73"><a href="#L-73"><span class="linenos"> 73</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ts</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="kc">None</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
-</span><span id="L-74"><a href="#L-74"><span class="linenos"> 74</span></a>
-</span><span id="L-75"><a href="#L-75"><span class="linenos"> 75</span></a>    <span class="nd">@property</span>
-</span><span id="L-76"><a href="#L-76"><span class="linenos"> 76</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">train_profile</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
-</span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a><span class="w">        </span><span class="sd">"""Typical-day profile computed on the training period only (no leakage)."""</span>
-</span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a>        <span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)</span>
-</span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a>        <span class="k">return</span> <span class="n">daily_profile</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span>
-</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a>
-</span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">profile_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a><span class="w">        </span><span class="sd">"""Evaluate :attr:`train_profile` on arbitrary timestamps."""</span>
-</span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a>        <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
-</span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a>        <span class="n">keys</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">([</span><span class="n">ts</span><span class="o">.</span><span class="n">dayofweek</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ts</span><span class="o">.</span><span class="n">hour</span> <span class="o">*</span> <span class="mi">60</span> <span class="o">+</span> <span class="n">ts</span><span class="o">.</span><span class="n">minute</span><span class="p">])</span>
-</span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_profile</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+</span><span id="L-70"><a href="#L-70"><span class="linenos"> 70</span></a>    <span class="n">y</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+</span><span id="L-71"><a href="#L-71"><span class="linenos"> 71</span></a>    <span class="n">ts</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span>
+</span><span id="L-72"><a href="#L-72"><span class="linenos"> 72</span></a>    <span class="n">occ</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>
+</span><span id="L-73"><a href="#L-73"><span class="linenos"> 73</span></a>    <span class="n">split</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+</span><span id="L-74"><a href="#L-74"><span class="linenos"> 74</span></a>    <span class="n">variable</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="L-75"><a href="#L-75"><span class="linenos"> 75</span></a>    <span class="n">unit</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="L-76"><a href="#L-76"><span class="linenos"> 76</span></a>
+</span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">part</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+</span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a><span class="w">        </span><span class="sd">"""Return the data of one split.</span>
+</span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a>
+</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="sd">        Args:</span>
+</span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a><span class="sd">            name: ``"train"``, ``"val"`` or ``"test"``.</span>
+</span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a>
+</span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a><span class="sd">        Returns:</span>
+</span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a><span class="sd">            ``(y, ts, occ)`` restricted to that split (``occ`` is None when</span>
+</span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a><span class="sd">            the study has no occupancy proxy).</span>
 </span><span id="L-86"><a href="#L-86"><span class="linenos"> 86</span></a>
-</span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a>    <span class="nd">@property</span>
-</span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">level_ref</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-</span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a><span class="w">        </span><span class="sd">"""Median of the training target (reference level for ML features)."""</span>
-</span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a>        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span>
-</span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a>
-</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a>
-</span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a><span class="k">def</span><span class="w"> </span><span class="nf">load_study</span><span class="p">(</span><span class="n">processed</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">=</span> <span class="s2">"data/processed"</span><span class="p">,</span> <span class="n">variable</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"co2"</span><span class="p">,</span> <span class="n">sensor</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">PRIMARY_SENSOR</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Study</span><span class="p">:</span>
-</span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a><span class="w">    </span><span class="sd">"""Load a processed sensor series with its split labels and occupancy proxy.</span>
+</span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a><span class="sd">        Example:</span>
+</span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a><span class="sd">            &gt;&gt;&gt; st = Study(np.arange(4.0), pd.date_range("2024-01-01", periods=4, freq="10min"),</span>
+</span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a><span class="sd">            ...            None, np.array(["train", "train", "val", "test"]), "co2", "ppm")</span>
+</span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a><span class="sd">            &gt;&gt;&gt; st.part("train")[0].tolist()</span>
+</span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a><span class="sd">            [0.0, 1.0]</span>
+</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="sd">        """</span>
+</span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a>        <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">split</span> <span class="o">==</span> <span class="n">name</span>
+</span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ts</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="kc">None</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
 </span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a>
-</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a><span class="sd">    Args:</span>
-</span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a><span class="sd">        processed: Folder written by ``scripts/preprocess.py``.</span>
-</span><span id="L-98"><a href="#L-98"><span class="linenos"> 98</span></a><span class="sd">        variable: ``"co2"``, ``"temp"``, ``"rh"`` or ``"pressure"``.</span>
-</span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a><span class="sd">        sensor: Sensor id.</span>
-</span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a>
-</span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a><span class="sd">    Returns:</span>
-</span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a><span class="sd">        A :class:`Study`. For the secondary sensor, ``occ`` is None and the</span>
-</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a><span class="sd">        whole series is labelled ``"test"``.</span>
-</span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a>
-</span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a><span class="sd">    Raises:</span>
-</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a><span class="sd">        FileNotFoundError: If preprocessing has not been run.</span>
-</span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a><span class="sd">    """</span>
-</span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">UNITS</span>
+</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a>    <span class="nd">@property</span>
+</span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">train_profile</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+</span><span id="L-98"><a href="#L-98"><span class="linenos"> 98</span></a><span class="w">        </span><span class="sd">"""Typical-day profile computed on the training period only (no leakage).</span>
+</span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a>
+</span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a><span class="sd">        Returns:</span>
+</span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a><span class="sd">            Median value per (weekend flag, minute of day), as returned by</span>
+</span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a><span class="sd">            :func:`sensorfill.interpolation.daily_profile`.</span>
+</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a><span class="sd">        """</span>
+</span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a>        <span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)</span>
+</span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a>        <span class="k">return</span> <span class="n">daily_profile</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span>
+</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a>
+</span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">profile_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a><span class="w">        </span><span class="sd">"""Evaluate :attr:`train_profile` on arbitrary timestamps.</span>
 </span><span id="L-109"><a href="#L-109"><span class="linenos">109</span></a>
-</span><span id="L-110"><a href="#L-110"><span class="linenos">110</span></a>    <span class="n">processed</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">processed</span><span class="p">)</span>
-</span><span id="L-111"><a href="#L-111"><span class="linenos">111</span></a>    <span class="n">f</span> <span class="o">=</span> <span class="n">processed</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"env_</span><span class="si">{</span><span class="n">sensor</span><span class="si">}</span><span class="s2">.parquet"</span>
-</span><span id="L-112"><a href="#L-112"><span class="linenos">112</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-</span><span id="L-113"><a href="#L-113"><span class="linenos">113</span></a>        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2"> not found - run scripts/preprocess.py (or notebook 00) first"</span><span class="p">)</span>
-</span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a>    <span class="n">env</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
-</span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a>    <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
-</span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a>    <span class="n">y</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="n">variable</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
-</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a>    <span class="k">if</span> <span class="n">sensor</span> <span class="o">==</span> <span class="n">PRIMARY_SENSOR</span><span class="p">:</span>
-</span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a>        <span class="n">occ_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">processed</span> <span class="o">/</span> <span class="s2">"occupancy.parquet"</span><span class="p">)</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
-</span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a>        <span class="n">occ</span> <span class="o">=</span> <span class="n">occ_df</span><span class="p">[</span><span class="n">OCC_PROXY_SPACES</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">min_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">OCC_PROXY_SPACES</span><span class="p">))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a>        <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ts</span> <span class="o">&lt;</span> <span class="n">TRAIN_END</span><span class="p">,</span> <span class="s2">"train"</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ts</span> <span class="o">&lt;</span> <span class="n">VAL_END</span><span class="p">,</span> <span class="s2">"val"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">))</span>
-</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a>        <span class="n">occ</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a>        <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ts</span><span class="p">),</span> <span class="s2">"test"</span><span class="p">)</span>
-</span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a>    <span class="k">return</span> <span class="n">Study</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">occ</span><span class="p">,</span> <span class="n">split</span><span class="p">,</span> <span class="n">variable</span><span class="p">,</span> <span class="n">UNITS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">variable</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+</span><span id="L-110"><a href="#L-110"><span class="linenos">110</span></a><span class="sd">        Args:</span>
+</span><span id="L-111"><a href="#L-111"><span class="linenos">111</span></a><span class="sd">            ts: Timestamps (any array-like accepted by ``pd.DatetimeIndex``).</span>
+</span><span id="L-112"><a href="#L-112"><span class="linenos">112</span></a>
+</span><span id="L-113"><a href="#L-113"><span class="linenos">113</span></a><span class="sd">        Returns:</span>
+</span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a><span class="sd">            The typical-day value for each timestamp (NaN for a time of day</span>
+</span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a><span class="sd">            never seen in training).</span>
+</span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a><span class="sd">        """</span>
+</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a>        <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
+</span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a>        <span class="n">keys</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">([</span><span class="n">ts</span><span class="o">.</span><span class="n">dayofweek</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ts</span><span class="o">.</span><span class="n">hour</span> <span class="o">*</span> <span class="mi">60</span> <span class="o">+</span> <span class="n">ts</span><span class="o">.</span><span class="n">minute</span><span class="p">])</span>
+</span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_profile</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a>
+</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a>    <span class="nd">@property</span>
+</span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">level_ref</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a><span class="w">        </span><span class="sd">"""Median of the training target (reference level for ML features).</span>
+</span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a>
+</span><span id="L-125"><a href="#L-125"><span class="linenos">125</span></a><span class="sd">        Returns:</span>
+</span><span id="L-126"><a href="#L-126"><span class="linenos">126</span></a><span class="sd">            ``nanmedian`` of the training-split target, in the target's units.</span>
+</span><span id="L-127"><a href="#L-127"><span class="linenos">127</span></a><span class="sd">        """</span>
+</span><span id="L-128"><a href="#L-128"><span class="linenos">128</span></a>        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span>
+</span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a>
+</span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a>
+</span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a><span class="k">def</span><span class="w"> </span><span class="nf">load_study</span><span class="p">(</span><span class="n">processed</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">=</span> <span class="s2">"data/processed"</span><span class="p">,</span> <span class="n">variable</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"co2"</span><span class="p">,</span> <span class="n">sensor</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">PRIMARY_SENSOR</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Study</span><span class="p">:</span>
+</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a><span class="w">    </span><span class="sd">"""Load a processed sensor series with its split labels and occupancy proxy.</span>
+</span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a>
+</span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a><span class="sd">    Args:</span>
+</span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a><span class="sd">        processed: Folder written by ``scripts/preprocess.py``.</span>
+</span><span id="L-136"><a href="#L-136"><span class="linenos">136</span></a><span class="sd">        variable: ``"co2"``, ``"temp"``, ``"rh"`` or ``"pressure"``.</span>
+</span><span id="L-137"><a href="#L-137"><span class="linenos">137</span></a><span class="sd">        sensor: Sensor id.</span>
+</span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a>
+</span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a><span class="sd">    Returns:</span>
+</span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a><span class="sd">        A :class:`Study`. For the secondary sensor, ``occ`` is None and the</span>
+</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a><span class="sd">        whole series is labelled ``"test"``.</span>
+</span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a>
+</span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a><span class="sd">    Raises:</span>
+</span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a><span class="sd">        FileNotFoundError: If preprocessing has not been run.</span>
+</span><span id="L-145"><a href="#L-145"><span class="linenos">145</span></a>
+</span><span id="L-146"><a href="#L-146"><span class="linenos">146</span></a><span class="sd">    Example:</span>
+</span><span id="L-147"><a href="#L-147"><span class="linenos">147</span></a><span class="sd">        &gt;&gt;&gt; st = load_study("data/processed", "co2")  # doctest: +SKIP</span>
+</span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a><span class="sd">        &gt;&gt;&gt; st.unit, sorted(set(st.split))  # doctest: +SKIP</span>
+</span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a><span class="sd">        ('ppm', ['test', 'train', 'val'])</span>
+</span><span id="L-150"><a href="#L-150"><span class="linenos">150</span></a><span class="sd">    """</span>
+</span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">UNITS</span>
+</span><span id="L-152"><a href="#L-152"><span class="linenos">152</span></a>
+</span><span id="L-153"><a href="#L-153"><span class="linenos">153</span></a>    <span class="n">processed</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">processed</span><span class="p">)</span>
+</span><span id="L-154"><a href="#L-154"><span class="linenos">154</span></a>    <span class="n">f</span> <span class="o">=</span> <span class="n">processed</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"env_</span><span class="si">{</span><span class="n">sensor</span><span class="si">}</span><span class="s2">.parquet"</span>
+</span><span id="L-155"><a href="#L-155"><span class="linenos">155</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+</span><span id="L-156"><a href="#L-156"><span class="linenos">156</span></a>        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2"> not found - run scripts/preprocess.py (or notebook 00) first"</span><span class="p">)</span>
+</span><span id="L-157"><a href="#L-157"><span class="linenos">157</span></a>    <span class="n">env</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+</span><span id="L-158"><a href="#L-158"><span class="linenos">158</span></a>    <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+</span><span id="L-159"><a href="#L-159"><span class="linenos">159</span></a>    <span class="n">y</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="n">variable</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+</span><span id="L-160"><a href="#L-160"><span class="linenos">160</span></a>    <span class="k">if</span> <span class="n">sensor</span> <span class="o">==</span> <span class="n">PRIMARY_SENSOR</span><span class="p">:</span>
+</span><span id="L-161"><a href="#L-161"><span class="linenos">161</span></a>        <span class="n">occ_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">processed</span> <span class="o">/</span> <span class="s2">"occupancy.parquet"</span><span class="p">)</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
+</span><span id="L-162"><a href="#L-162"><span class="linenos">162</span></a>        <span class="n">occ</span> <span class="o">=</span> <span class="n">occ_df</span><span class="p">[</span><span class="n">OCC_PROXY_SPACES</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">min_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">OCC_PROXY_SPACES</span><span class="p">))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+</span><span id="L-163"><a href="#L-163"><span class="linenos">163</span></a>        <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ts</span> <span class="o">&lt;</span> <span class="n">TRAIN_END</span><span class="p">,</span> <span class="s2">"train"</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ts</span> <span class="o">&lt;</span> <span class="n">VAL_END</span><span class="p">,</span> <span class="s2">"val"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">))</span>
+</span><span id="L-164"><a href="#L-164"><span class="linenos">164</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="L-165"><a href="#L-165"><span class="linenos">165</span></a>        <span class="n">occ</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="L-166"><a href="#L-166"><span class="linenos">166</span></a>        <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ts</span><span class="p">),</span> <span class="s2">"test"</span><span class="p">)</span>
+</span><span id="L-167"><a href="#L-167"><span class="linenos">167</span></a>    <span class="k">return</span> <span class="n">Study</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">occ</span><span class="p">,</span> <span class="n">split</span><span class="p">,</span> <span class="n">variable</span><span class="p">,</span> <span class="n">UNITS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">variable</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
 </span></pre></div>
 
 
@@ -417,47 +460,78 @@ any occupancy space).</li>
 
     </div>
     <a class="headerlink" href="#Study"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="Study-51"><a href="#Study-51"><span class="linenos">51</span></a><span class="nd">@dataclass</span>
-</span><span id="Study-52"><a href="#Study-52"><span class="linenos">52</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Study</span><span class="p">:</span>
-</span><span id="Study-53"><a href="#Study-53"><span class="linenos">53</span></a><span class="w">    </span><span class="sd">"""One target variable of one sensor, with splits and context.</span>
-</span><span id="Study-54"><a href="#Study-54"><span class="linenos">54</span></a>
-</span><span id="Study-55"><a href="#Study-55"><span class="linenos">55</span></a><span class="sd">    Attributes:</span>
-</span><span id="Study-56"><a href="#Study-56"><span class="linenos">56</span></a><span class="sd">        y: Target series (NaN = missing) on the 10-min grid.</span>
-</span><span id="Study-57"><a href="#Study-57"><span class="linenos">57</span></a><span class="sd">        ts: Timestamps.</span>
-</span><span id="Study-58"><a href="#Study-58"><span class="linenos">58</span></a><span class="sd">        occ: Occupancy proxy [persons] or None.</span>
-</span><span id="Study-59"><a href="#Study-59"><span class="linenos">59</span></a><span class="sd">        split: Array of ``"train"``, ``"val"`` or ``"test"`` labels.</span>
-</span><span id="Study-60"><a href="#Study-60"><span class="linenos">60</span></a><span class="sd">        variable: Target name (e.g. ``"co2"``).</span>
-</span><span id="Study-61"><a href="#Study-61"><span class="linenos">61</span></a><span class="sd">        unit: Target unit.</span>
-</span><span id="Study-62"><a href="#Study-62"><span class="linenos">62</span></a><span class="sd">    """</span>
-</span><span id="Study-63"><a href="#Study-63"><span class="linenos">63</span></a>
-</span><span id="Study-64"><a href="#Study-64"><span class="linenos">64</span></a>    <span class="n">y</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-</span><span id="Study-65"><a href="#Study-65"><span class="linenos">65</span></a>    <span class="n">ts</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span>
-</span><span id="Study-66"><a href="#Study-66"><span class="linenos">66</span></a>    <span class="n">occ</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>
-</span><span id="Study-67"><a href="#Study-67"><span class="linenos">67</span></a>    <span class="n">split</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-</span><span id="Study-68"><a href="#Study-68"><span class="linenos">68</span></a>    <span class="n">variable</span><span class="p">:</span> <span class="nb">str</span>
-</span><span id="Study-69"><a href="#Study-69"><span class="linenos">69</span></a>    <span class="n">unit</span><span class="p">:</span> <span class="nb">str</span>
-</span><span id="Study-70"><a href="#Study-70"><span class="linenos">70</span></a>
-</span><span id="Study-71"><a href="#Study-71"><span class="linenos">71</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">part</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-</span><span id="Study-72"><a href="#Study-72"><span class="linenos">72</span></a><span class="w">        </span><span class="sd">"""Return ``(y, ts, occ)`` restricted to one split."""</span>
-</span><span id="Study-73"><a href="#Study-73"><span class="linenos">73</span></a>        <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">split</span> <span class="o">==</span> <span class="n">name</span>
-</span><span id="Study-74"><a href="#Study-74"><span class="linenos">74</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ts</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="kc">None</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
-</span><span id="Study-75"><a href="#Study-75"><span class="linenos">75</span></a>
-</span><span id="Study-76"><a href="#Study-76"><span class="linenos">76</span></a>    <span class="nd">@property</span>
-</span><span id="Study-77"><a href="#Study-77"><span class="linenos">77</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">train_profile</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
-</span><span id="Study-78"><a href="#Study-78"><span class="linenos">78</span></a><span class="w">        </span><span class="sd">"""Typical-day profile computed on the training period only (no leakage)."""</span>
-</span><span id="Study-79"><a href="#Study-79"><span class="linenos">79</span></a>        <span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)</span>
-</span><span id="Study-80"><a href="#Study-80"><span class="linenos">80</span></a>        <span class="k">return</span> <span class="n">daily_profile</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span>
-</span><span id="Study-81"><a href="#Study-81"><span class="linenos">81</span></a>
-</span><span id="Study-82"><a href="#Study-82"><span class="linenos">82</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">profile_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="Study-83"><a href="#Study-83"><span class="linenos">83</span></a><span class="w">        </span><span class="sd">"""Evaluate :attr:`train_profile` on arbitrary timestamps."""</span>
-</span><span id="Study-84"><a href="#Study-84"><span class="linenos">84</span></a>        <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
-</span><span id="Study-85"><a href="#Study-85"><span class="linenos">85</span></a>        <span class="n">keys</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">([</span><span class="n">ts</span><span class="o">.</span><span class="n">dayofweek</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ts</span><span class="o">.</span><span class="n">hour</span> <span class="o">*</span> <span class="mi">60</span> <span class="o">+</span> <span class="n">ts</span><span class="o">.</span><span class="n">minute</span><span class="p">])</span>
-</span><span id="Study-86"><a href="#Study-86"><span class="linenos">86</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_profile</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-</span><span id="Study-87"><a href="#Study-87"><span class="linenos">87</span></a>
-</span><span id="Study-88"><a href="#Study-88"><span class="linenos">88</span></a>    <span class="nd">@property</span>
-</span><span id="Study-89"><a href="#Study-89"><span class="linenos">89</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">level_ref</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-</span><span id="Study-90"><a href="#Study-90"><span class="linenos">90</span></a><span class="w">        </span><span class="sd">"""Median of the training target (reference level for ML features)."""</span>
-</span><span id="Study-91"><a href="#Study-91"><span class="linenos">91</span></a>        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Study-58"><a href="#Study-58"><span class="linenos"> 58</span></a><span class="nd">@dataclass</span>
+</span><span id="Study-59"><a href="#Study-59"><span class="linenos"> 59</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Study</span><span class="p">:</span>
+</span><span id="Study-60"><a href="#Study-60"><span class="linenos"> 60</span></a><span class="w">    </span><span class="sd">"""One target variable of one sensor, with splits and context.</span>
+</span><span id="Study-61"><a href="#Study-61"><span class="linenos"> 61</span></a>
+</span><span id="Study-62"><a href="#Study-62"><span class="linenos"> 62</span></a><span class="sd">    Attributes:</span>
+</span><span id="Study-63"><a href="#Study-63"><span class="linenos"> 63</span></a><span class="sd">        y: Target series (NaN = missing) on the 10-min grid.</span>
+</span><span id="Study-64"><a href="#Study-64"><span class="linenos"> 64</span></a><span class="sd">        ts: Timestamps.</span>
+</span><span id="Study-65"><a href="#Study-65"><span class="linenos"> 65</span></a><span class="sd">        occ: Occupancy proxy [persons] or None.</span>
+</span><span id="Study-66"><a href="#Study-66"><span class="linenos"> 66</span></a><span class="sd">        split: Array of ``"train"``, ``"val"`` or ``"test"`` labels.</span>
+</span><span id="Study-67"><a href="#Study-67"><span class="linenos"> 67</span></a><span class="sd">        variable: Target name (e.g. ``"co2"``).</span>
+</span><span id="Study-68"><a href="#Study-68"><span class="linenos"> 68</span></a><span class="sd">        unit: Target unit.</span>
+</span><span id="Study-69"><a href="#Study-69"><span class="linenos"> 69</span></a><span class="sd">    """</span>
+</span><span id="Study-70"><a href="#Study-70"><span class="linenos"> 70</span></a>
+</span><span id="Study-71"><a href="#Study-71"><span class="linenos"> 71</span></a>    <span class="n">y</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+</span><span id="Study-72"><a href="#Study-72"><span class="linenos"> 72</span></a>    <span class="n">ts</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span>
+</span><span id="Study-73"><a href="#Study-73"><span class="linenos"> 73</span></a>    <span class="n">occ</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>
+</span><span id="Study-74"><a href="#Study-74"><span class="linenos"> 74</span></a>    <span class="n">split</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+</span><span id="Study-75"><a href="#Study-75"><span class="linenos"> 75</span></a>    <span class="n">variable</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="Study-76"><a href="#Study-76"><span class="linenos"> 76</span></a>    <span class="n">unit</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="Study-77"><a href="#Study-77"><span class="linenos"> 77</span></a>
+</span><span id="Study-78"><a href="#Study-78"><span class="linenos"> 78</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">part</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+</span><span id="Study-79"><a href="#Study-79"><span class="linenos"> 79</span></a><span class="w">        </span><span class="sd">"""Return the data of one split.</span>
+</span><span id="Study-80"><a href="#Study-80"><span class="linenos"> 80</span></a>
+</span><span id="Study-81"><a href="#Study-81"><span class="linenos"> 81</span></a><span class="sd">        Args:</span>
+</span><span id="Study-82"><a href="#Study-82"><span class="linenos"> 82</span></a><span class="sd">            name: ``"train"``, ``"val"`` or ``"test"``.</span>
+</span><span id="Study-83"><a href="#Study-83"><span class="linenos"> 83</span></a>
+</span><span id="Study-84"><a href="#Study-84"><span class="linenos"> 84</span></a><span class="sd">        Returns:</span>
+</span><span id="Study-85"><a href="#Study-85"><span class="linenos"> 85</span></a><span class="sd">            ``(y, ts, occ)`` restricted to that split (``occ`` is None when</span>
+</span><span id="Study-86"><a href="#Study-86"><span class="linenos"> 86</span></a><span class="sd">            the study has no occupancy proxy).</span>
+</span><span id="Study-87"><a href="#Study-87"><span class="linenos"> 87</span></a>
+</span><span id="Study-88"><a href="#Study-88"><span class="linenos"> 88</span></a><span class="sd">        Example:</span>
+</span><span id="Study-89"><a href="#Study-89"><span class="linenos"> 89</span></a><span class="sd">            &gt;&gt;&gt; st = Study(np.arange(4.0), pd.date_range("2024-01-01", periods=4, freq="10min"),</span>
+</span><span id="Study-90"><a href="#Study-90"><span class="linenos"> 90</span></a><span class="sd">            ...            None, np.array(["train", "train", "val", "test"]), "co2", "ppm")</span>
+</span><span id="Study-91"><a href="#Study-91"><span class="linenos"> 91</span></a><span class="sd">            &gt;&gt;&gt; st.part("train")[0].tolist()</span>
+</span><span id="Study-92"><a href="#Study-92"><span class="linenos"> 92</span></a><span class="sd">            [0.0, 1.0]</span>
+</span><span id="Study-93"><a href="#Study-93"><span class="linenos"> 93</span></a><span class="sd">        """</span>
+</span><span id="Study-94"><a href="#Study-94"><span class="linenos"> 94</span></a>        <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">split</span> <span class="o">==</span> <span class="n">name</span>
+</span><span id="Study-95"><a href="#Study-95"><span class="linenos"> 95</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ts</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="kc">None</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
+</span><span id="Study-96"><a href="#Study-96"><span class="linenos"> 96</span></a>
+</span><span id="Study-97"><a href="#Study-97"><span class="linenos"> 97</span></a>    <span class="nd">@property</span>
+</span><span id="Study-98"><a href="#Study-98"><span class="linenos"> 98</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">train_profile</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+</span><span id="Study-99"><a href="#Study-99"><span class="linenos"> 99</span></a><span class="w">        </span><span class="sd">"""Typical-day profile computed on the training period only (no leakage).</span>
+</span><span id="Study-100"><a href="#Study-100"><span class="linenos">100</span></a>
+</span><span id="Study-101"><a href="#Study-101"><span class="linenos">101</span></a><span class="sd">        Returns:</span>
+</span><span id="Study-102"><a href="#Study-102"><span class="linenos">102</span></a><span class="sd">            Median value per (weekend flag, minute of day), as returned by</span>
+</span><span id="Study-103"><a href="#Study-103"><span class="linenos">103</span></a><span class="sd">            :func:`sensorfill.interpolation.daily_profile`.</span>
+</span><span id="Study-104"><a href="#Study-104"><span class="linenos">104</span></a><span class="sd">        """</span>
+</span><span id="Study-105"><a href="#Study-105"><span class="linenos">105</span></a>        <span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)</span>
+</span><span id="Study-106"><a href="#Study-106"><span class="linenos">106</span></a>        <span class="k">return</span> <span class="n">daily_profile</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span>
+</span><span id="Study-107"><a href="#Study-107"><span class="linenos">107</span></a>
+</span><span id="Study-108"><a href="#Study-108"><span class="linenos">108</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">profile_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="Study-109"><a href="#Study-109"><span class="linenos">109</span></a><span class="w">        </span><span class="sd">"""Evaluate :attr:`train_profile` on arbitrary timestamps.</span>
+</span><span id="Study-110"><a href="#Study-110"><span class="linenos">110</span></a>
+</span><span id="Study-111"><a href="#Study-111"><span class="linenos">111</span></a><span class="sd">        Args:</span>
+</span><span id="Study-112"><a href="#Study-112"><span class="linenos">112</span></a><span class="sd">            ts: Timestamps (any array-like accepted by ``pd.DatetimeIndex``).</span>
+</span><span id="Study-113"><a href="#Study-113"><span class="linenos">113</span></a>
+</span><span id="Study-114"><a href="#Study-114"><span class="linenos">114</span></a><span class="sd">        Returns:</span>
+</span><span id="Study-115"><a href="#Study-115"><span class="linenos">115</span></a><span class="sd">            The typical-day value for each timestamp (NaN for a time of day</span>
+</span><span id="Study-116"><a href="#Study-116"><span class="linenos">116</span></a><span class="sd">            never seen in training).</span>
+</span><span id="Study-117"><a href="#Study-117"><span class="linenos">117</span></a><span class="sd">        """</span>
+</span><span id="Study-118"><a href="#Study-118"><span class="linenos">118</span></a>        <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
+</span><span id="Study-119"><a href="#Study-119"><span class="linenos">119</span></a>        <span class="n">keys</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">([</span><span class="n">ts</span><span class="o">.</span><span class="n">dayofweek</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ts</span><span class="o">.</span><span class="n">hour</span> <span class="o">*</span> <span class="mi">60</span> <span class="o">+</span> <span class="n">ts</span><span class="o">.</span><span class="n">minute</span><span class="p">])</span>
+</span><span id="Study-120"><a href="#Study-120"><span class="linenos">120</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_profile</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+</span><span id="Study-121"><a href="#Study-121"><span class="linenos">121</span></a>
+</span><span id="Study-122"><a href="#Study-122"><span class="linenos">122</span></a>    <span class="nd">@property</span>
+</span><span id="Study-123"><a href="#Study-123"><span class="linenos">123</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">level_ref</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="Study-124"><a href="#Study-124"><span class="linenos">124</span></a><span class="w">        </span><span class="sd">"""Median of the training target (reference level for ML features).</span>
+</span><span id="Study-125"><a href="#Study-125"><span class="linenos">125</span></a>
+</span><span id="Study-126"><a href="#Study-126"><span class="linenos">126</span></a><span class="sd">        Returns:</span>
+</span><span id="Study-127"><a href="#Study-127"><span class="linenos">127</span></a><span class="sd">            ``nanmedian`` of the training-split target, in the target's units.</span>
+</span><span id="Study-128"><a href="#Study-128"><span class="linenos">128</span></a><span class="sd">        """</span>
+</span><span id="Study-129"><a href="#Study-129"><span class="linenos">129</span></a>        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span>
 </span></pre></div>
 
 
@@ -565,14 +639,53 @@ any occupancy space).</li>
 
     </div>
     <a class="headerlink" href="#Study.part"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="Study.part-71"><a href="#Study.part-71"><span class="linenos">71</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">part</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-</span><span id="Study.part-72"><a href="#Study.part-72"><span class="linenos">72</span></a><span class="w">        </span><span class="sd">"""Return ``(y, ts, occ)`` restricted to one split."""</span>
-</span><span id="Study.part-73"><a href="#Study.part-73"><span class="linenos">73</span></a>        <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">split</span> <span class="o">==</span> <span class="n">name</span>
-</span><span id="Study.part-74"><a href="#Study.part-74"><span class="linenos">74</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ts</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="kc">None</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Study.part-78"><a href="#Study.part-78"><span class="linenos">78</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">part</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+</span><span id="Study.part-79"><a href="#Study.part-79"><span class="linenos">79</span></a><span class="w">        </span><span class="sd">"""Return the data of one split.</span>
+</span><span id="Study.part-80"><a href="#Study.part-80"><span class="linenos">80</span></a>
+</span><span id="Study.part-81"><a href="#Study.part-81"><span class="linenos">81</span></a><span class="sd">        Args:</span>
+</span><span id="Study.part-82"><a href="#Study.part-82"><span class="linenos">82</span></a><span class="sd">            name: ``"train"``, ``"val"`` or ``"test"``.</span>
+</span><span id="Study.part-83"><a href="#Study.part-83"><span class="linenos">83</span></a>
+</span><span id="Study.part-84"><a href="#Study.part-84"><span class="linenos">84</span></a><span class="sd">        Returns:</span>
+</span><span id="Study.part-85"><a href="#Study.part-85"><span class="linenos">85</span></a><span class="sd">            ``(y, ts, occ)`` restricted to that split (``occ`` is None when</span>
+</span><span id="Study.part-86"><a href="#Study.part-86"><span class="linenos">86</span></a><span class="sd">            the study has no occupancy proxy).</span>
+</span><span id="Study.part-87"><a href="#Study.part-87"><span class="linenos">87</span></a>
+</span><span id="Study.part-88"><a href="#Study.part-88"><span class="linenos">88</span></a><span class="sd">        Example:</span>
+</span><span id="Study.part-89"><a href="#Study.part-89"><span class="linenos">89</span></a><span class="sd">            &gt;&gt;&gt; st = Study(np.arange(4.0), pd.date_range("2024-01-01", periods=4, freq="10min"),</span>
+</span><span id="Study.part-90"><a href="#Study.part-90"><span class="linenos">90</span></a><span class="sd">            ...            None, np.array(["train", "train", "val", "test"]), "co2", "ppm")</span>
+</span><span id="Study.part-91"><a href="#Study.part-91"><span class="linenos">91</span></a><span class="sd">            &gt;&gt;&gt; st.part("train")[0].tolist()</span>
+</span><span id="Study.part-92"><a href="#Study.part-92"><span class="linenos">92</span></a><span class="sd">            [0.0, 1.0]</span>
+</span><span id="Study.part-93"><a href="#Study.part-93"><span class="linenos">93</span></a><span class="sd">        """</span>
+</span><span id="Study.part-94"><a href="#Study.part-94"><span class="linenos">94</span></a>        <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">split</span> <span class="o">==</span> <span class="n">name</span>
+</span><span id="Study.part-95"><a href="#Study.part-95"><span class="linenos">95</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ts</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="kc">None</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">occ</span><span class="p">[</span><span class="n">m</span><span class="p">]</span>
 </span></pre></div>
 
 
-            <div class="docstring"><p>Return <code>(y, ts, occ)</code> restricted to one split.</p>
+            <div class="docstring"><p>Return the data of one split.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>name:</strong>  <code>"train"</code>, <code>"val"</code> or <code>"test"</code>.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p><code>(y, ts, occ)</code> restricted to that split (<code><a href="#Study.occ">occ</a></code> is None when
+  the study has no occupancy proxy).</p>
+</blockquote>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">st</span> <span class="o">=</span> <span class="n">Study</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">4.0</span><span class="p">),</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="s2">"2024-01-01"</span><span class="p">,</span> <span class="n">periods</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="s2">"10min"</span><span class="p">),</span>
+<span class="gp">... </span>           <span class="kc">None</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">"train"</span><span class="p">,</span> <span class="s2">"train"</span><span class="p">,</span> <span class="s2">"val"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">]),</span> <span class="s2">"co2"</span><span class="p">,</span> <span class="s2">"ppm"</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">st</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+<span class="go">[0.0, 1.0]</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
 
@@ -586,15 +699,27 @@ any occupancy space).</li>
 
     </div>
     <a class="headerlink" href="#Study.train_profile"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="Study.train_profile-76"><a href="#Study.train_profile-76"><span class="linenos">76</span></a>    <span class="nd">@property</span>
-</span><span id="Study.train_profile-77"><a href="#Study.train_profile-77"><span class="linenos">77</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">train_profile</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
-</span><span id="Study.train_profile-78"><a href="#Study.train_profile-78"><span class="linenos">78</span></a><span class="w">        </span><span class="sd">"""Typical-day profile computed on the training period only (no leakage)."""</span>
-</span><span id="Study.train_profile-79"><a href="#Study.train_profile-79"><span class="linenos">79</span></a>        <span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)</span>
-</span><span id="Study.train_profile-80"><a href="#Study.train_profile-80"><span class="linenos">80</span></a>        <span class="k">return</span> <span class="n">daily_profile</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Study.train_profile-97"><a href="#Study.train_profile-97"><span class="linenos"> 97</span></a>    <span class="nd">@property</span>
+</span><span id="Study.train_profile-98"><a href="#Study.train_profile-98"><span class="linenos"> 98</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">train_profile</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+</span><span id="Study.train_profile-99"><a href="#Study.train_profile-99"><span class="linenos"> 99</span></a><span class="w">        </span><span class="sd">"""Typical-day profile computed on the training period only (no leakage).</span>
+</span><span id="Study.train_profile-100"><a href="#Study.train_profile-100"><span class="linenos">100</span></a>
+</span><span id="Study.train_profile-101"><a href="#Study.train_profile-101"><span class="linenos">101</span></a><span class="sd">        Returns:</span>
+</span><span id="Study.train_profile-102"><a href="#Study.train_profile-102"><span class="linenos">102</span></a><span class="sd">            Median value per (weekend flag, minute of day), as returned by</span>
+</span><span id="Study.train_profile-103"><a href="#Study.train_profile-103"><span class="linenos">103</span></a><span class="sd">            :func:`sensorfill.interpolation.daily_profile`.</span>
+</span><span id="Study.train_profile-104"><a href="#Study.train_profile-104"><span class="linenos">104</span></a><span class="sd">        """</span>
+</span><span id="Study.train_profile-105"><a href="#Study.train_profile-105"><span class="linenos">105</span></a>        <span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)</span>
+</span><span id="Study.train_profile-106"><a href="#Study.train_profile-106"><span class="linenos">106</span></a>        <span class="k">return</span> <span class="n">daily_profile</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span>
 </span></pre></div>
 
 
             <div class="docstring"><p>Typical-day profile computed on the training period only (no leakage).</p>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>Median value per (weekend flag, minute of day), as returned by
+  <code><a href="interpolation.html#daily_profile">sensorfill.interpolation.daily_profile()</a></code>.</p>
+</blockquote>
 </div>
 
 
@@ -610,15 +735,36 @@ any occupancy space).</li>
 
     </div>
     <a class="headerlink" href="#Study.profile_values"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="Study.profile_values-82"><a href="#Study.profile_values-82"><span class="linenos">82</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">profile_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="Study.profile_values-83"><a href="#Study.profile_values-83"><span class="linenos">83</span></a><span class="w">        </span><span class="sd">"""Evaluate :attr:`train_profile` on arbitrary timestamps."""</span>
-</span><span id="Study.profile_values-84"><a href="#Study.profile_values-84"><span class="linenos">84</span></a>        <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
-</span><span id="Study.profile_values-85"><a href="#Study.profile_values-85"><span class="linenos">85</span></a>        <span class="n">keys</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">([</span><span class="n">ts</span><span class="o">.</span><span class="n">dayofweek</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ts</span><span class="o">.</span><span class="n">hour</span> <span class="o">*</span> <span class="mi">60</span> <span class="o">+</span> <span class="n">ts</span><span class="o">.</span><span class="n">minute</span><span class="p">])</span>
-</span><span id="Study.profile_values-86"><a href="#Study.profile_values-86"><span class="linenos">86</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_profile</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Study.profile_values-108"><a href="#Study.profile_values-108"><span class="linenos">108</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">profile_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ts</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="Study.profile_values-109"><a href="#Study.profile_values-109"><span class="linenos">109</span></a><span class="w">        </span><span class="sd">"""Evaluate :attr:`train_profile` on arbitrary timestamps.</span>
+</span><span id="Study.profile_values-110"><a href="#Study.profile_values-110"><span class="linenos">110</span></a>
+</span><span id="Study.profile_values-111"><a href="#Study.profile_values-111"><span class="linenos">111</span></a><span class="sd">        Args:</span>
+</span><span id="Study.profile_values-112"><a href="#Study.profile_values-112"><span class="linenos">112</span></a><span class="sd">            ts: Timestamps (any array-like accepted by ``pd.DatetimeIndex``).</span>
+</span><span id="Study.profile_values-113"><a href="#Study.profile_values-113"><span class="linenos">113</span></a>
+</span><span id="Study.profile_values-114"><a href="#Study.profile_values-114"><span class="linenos">114</span></a><span class="sd">        Returns:</span>
+</span><span id="Study.profile_values-115"><a href="#Study.profile_values-115"><span class="linenos">115</span></a><span class="sd">            The typical-day value for each timestamp (NaN for a time of day</span>
+</span><span id="Study.profile_values-116"><a href="#Study.profile_values-116"><span class="linenos">116</span></a><span class="sd">            never seen in training).</span>
+</span><span id="Study.profile_values-117"><a href="#Study.profile_values-117"><span class="linenos">117</span></a><span class="sd">        """</span>
+</span><span id="Study.profile_values-118"><a href="#Study.profile_values-118"><span class="linenos">118</span></a>        <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
+</span><span id="Study.profile_values-119"><a href="#Study.profile_values-119"><span class="linenos">119</span></a>        <span class="n">keys</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">([</span><span class="n">ts</span><span class="o">.</span><span class="n">dayofweek</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ts</span><span class="o">.</span><span class="n">hour</span> <span class="o">*</span> <span class="mi">60</span> <span class="o">+</span> <span class="n">ts</span><span class="o">.</span><span class="n">minute</span><span class="p">])</span>
+</span><span id="Study.profile_values-120"><a href="#Study.profile_values-120"><span class="linenos">120</span></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_profile</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
 </span></pre></div>
 
 
             <div class="docstring"><p>Evaluate <code><a href="#Study.train_profile">train_profile</a></code> on arbitrary timestamps.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>ts:</strong>  Timestamps (any array-like accepted by <code>pd.DatetimeIndex</code>).</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>The typical-day value for each timestamp (NaN for a time of day
+  never seen in training).</p>
+</blockquote>
 </div>
 
 
@@ -632,14 +778,24 @@ any occupancy space).</li>
 
     </div>
     <a class="headerlink" href="#Study.level_ref"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="Study.level_ref-88"><a href="#Study.level_ref-88"><span class="linenos">88</span></a>    <span class="nd">@property</span>
-</span><span id="Study.level_ref-89"><a href="#Study.level_ref-89"><span class="linenos">89</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">level_ref</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-</span><span id="Study.level_ref-90"><a href="#Study.level_ref-90"><span class="linenos">90</span></a><span class="w">        </span><span class="sd">"""Median of the training target (reference level for ML features)."""</span>
-</span><span id="Study.level_ref-91"><a href="#Study.level_ref-91"><span class="linenos">91</span></a>        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Study.level_ref-122"><a href="#Study.level_ref-122"><span class="linenos">122</span></a>    <span class="nd">@property</span>
+</span><span id="Study.level_ref-123"><a href="#Study.level_ref-123"><span class="linenos">123</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">level_ref</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="Study.level_ref-124"><a href="#Study.level_ref-124"><span class="linenos">124</span></a><span class="w">        </span><span class="sd">"""Median of the training target (reference level for ML features).</span>
+</span><span id="Study.level_ref-125"><a href="#Study.level_ref-125"><span class="linenos">125</span></a>
+</span><span id="Study.level_ref-126"><a href="#Study.level_ref-126"><span class="linenos">126</span></a><span class="sd">        Returns:</span>
+</span><span id="Study.level_ref-127"><a href="#Study.level_ref-127"><span class="linenos">127</span></a><span class="sd">            ``nanmedian`` of the training-split target, in the target's units.</span>
+</span><span id="Study.level_ref-128"><a href="#Study.level_ref-128"><span class="linenos">128</span></a><span class="sd">        """</span>
+</span><span id="Study.level_ref-129"><a href="#Study.level_ref-129"><span class="linenos">129</span></a>        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">part</span><span class="p">(</span><span class="s2">"train"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span>
 </span></pre></div>
 
 
             <div class="docstring"><p>Median of the training target (reference level for ML features).</p>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p><code>nanmedian</code> of the training-split target, in the target's units.</p>
+</blockquote>
 </div>
 
 
@@ -656,38 +812,43 @@ any occupancy space).</li>
 
     </div>
     <a class="headerlink" href="#load_study"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="load_study-94"><a href="#load_study-94"><span class="linenos"> 94</span></a><span class="k">def</span><span class="w"> </span><span class="nf">load_study</span><span class="p">(</span><span class="n">processed</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">=</span> <span class="s2">"data/processed"</span><span class="p">,</span> <span class="n">variable</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"co2"</span><span class="p">,</span> <span class="n">sensor</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">PRIMARY_SENSOR</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Study</span><span class="p">:</span>
-</span><span id="load_study-95"><a href="#load_study-95"><span class="linenos"> 95</span></a><span class="w">    </span><span class="sd">"""Load a processed sensor series with its split labels and occupancy proxy.</span>
-</span><span id="load_study-96"><a href="#load_study-96"><span class="linenos"> 96</span></a>
-</span><span id="load_study-97"><a href="#load_study-97"><span class="linenos"> 97</span></a><span class="sd">    Args:</span>
-</span><span id="load_study-98"><a href="#load_study-98"><span class="linenos"> 98</span></a><span class="sd">        processed: Folder written by ``scripts/preprocess.py``.</span>
-</span><span id="load_study-99"><a href="#load_study-99"><span class="linenos"> 99</span></a><span class="sd">        variable: ``"co2"``, ``"temp"``, ``"rh"`` or ``"pressure"``.</span>
-</span><span id="load_study-100"><a href="#load_study-100"><span class="linenos">100</span></a><span class="sd">        sensor: Sensor id.</span>
-</span><span id="load_study-101"><a href="#load_study-101"><span class="linenos">101</span></a>
-</span><span id="load_study-102"><a href="#load_study-102"><span class="linenos">102</span></a><span class="sd">    Returns:</span>
-</span><span id="load_study-103"><a href="#load_study-103"><span class="linenos">103</span></a><span class="sd">        A :class:`Study`. For the secondary sensor, ``occ`` is None and the</span>
-</span><span id="load_study-104"><a href="#load_study-104"><span class="linenos">104</span></a><span class="sd">        whole series is labelled ``"test"``.</span>
-</span><span id="load_study-105"><a href="#load_study-105"><span class="linenos">105</span></a>
-</span><span id="load_study-106"><a href="#load_study-106"><span class="linenos">106</span></a><span class="sd">    Raises:</span>
-</span><span id="load_study-107"><a href="#load_study-107"><span class="linenos">107</span></a><span class="sd">        FileNotFoundError: If preprocessing has not been run.</span>
-</span><span id="load_study-108"><a href="#load_study-108"><span class="linenos">108</span></a><span class="sd">    """</span>
-</span><span id="load_study-109"><a href="#load_study-109"><span class="linenos">109</span></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">UNITS</span>
-</span><span id="load_study-110"><a href="#load_study-110"><span class="linenos">110</span></a>
-</span><span id="load_study-111"><a href="#load_study-111"><span class="linenos">111</span></a>    <span class="n">processed</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">processed</span><span class="p">)</span>
-</span><span id="load_study-112"><a href="#load_study-112"><span class="linenos">112</span></a>    <span class="n">f</span> <span class="o">=</span> <span class="n">processed</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"env_</span><span class="si">{</span><span class="n">sensor</span><span class="si">}</span><span class="s2">.parquet"</span>
-</span><span id="load_study-113"><a href="#load_study-113"><span class="linenos">113</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-</span><span id="load_study-114"><a href="#load_study-114"><span class="linenos">114</span></a>        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2"> not found - run scripts/preprocess.py (or notebook 00) first"</span><span class="p">)</span>
-</span><span id="load_study-115"><a href="#load_study-115"><span class="linenos">115</span></a>    <span class="n">env</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
-</span><span id="load_study-116"><a href="#load_study-116"><span class="linenos">116</span></a>    <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
-</span><span id="load_study-117"><a href="#load_study-117"><span class="linenos">117</span></a>    <span class="n">y</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="n">variable</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
-</span><span id="load_study-118"><a href="#load_study-118"><span class="linenos">118</span></a>    <span class="k">if</span> <span class="n">sensor</span> <span class="o">==</span> <span class="n">PRIMARY_SENSOR</span><span class="p">:</span>
-</span><span id="load_study-119"><a href="#load_study-119"><span class="linenos">119</span></a>        <span class="n">occ_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">processed</span> <span class="o">/</span> <span class="s2">"occupancy.parquet"</span><span class="p">)</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
-</span><span id="load_study-120"><a href="#load_study-120"><span class="linenos">120</span></a>        <span class="n">occ</span> <span class="o">=</span> <span class="n">occ_df</span><span class="p">[</span><span class="n">OCC_PROXY_SPACES</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">min_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">OCC_PROXY_SPACES</span><span class="p">))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-</span><span id="load_study-121"><a href="#load_study-121"><span class="linenos">121</span></a>        <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ts</span> <span class="o">&lt;</span> <span class="n">TRAIN_END</span><span class="p">,</span> <span class="s2">"train"</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ts</span> <span class="o">&lt;</span> <span class="n">VAL_END</span><span class="p">,</span> <span class="s2">"val"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">))</span>
-</span><span id="load_study-122"><a href="#load_study-122"><span class="linenos">122</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="load_study-123"><a href="#load_study-123"><span class="linenos">123</span></a>        <span class="n">occ</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="load_study-124"><a href="#load_study-124"><span class="linenos">124</span></a>        <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ts</span><span class="p">),</span> <span class="s2">"test"</span><span class="p">)</span>
-</span><span id="load_study-125"><a href="#load_study-125"><span class="linenos">125</span></a>    <span class="k">return</span> <span class="n">Study</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">occ</span><span class="p">,</span> <span class="n">split</span><span class="p">,</span> <span class="n">variable</span><span class="p">,</span> <span class="n">UNITS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">variable</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="load_study-132"><a href="#load_study-132"><span class="linenos">132</span></a><span class="k">def</span><span class="w"> </span><span class="nf">load_study</span><span class="p">(</span><span class="n">processed</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">=</span> <span class="s2">"data/processed"</span><span class="p">,</span> <span class="n">variable</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"co2"</span><span class="p">,</span> <span class="n">sensor</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">PRIMARY_SENSOR</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Study</span><span class="p">:</span>
+</span><span id="load_study-133"><a href="#load_study-133"><span class="linenos">133</span></a><span class="w">    </span><span class="sd">"""Load a processed sensor series with its split labels and occupancy proxy.</span>
+</span><span id="load_study-134"><a href="#load_study-134"><span class="linenos">134</span></a>
+</span><span id="load_study-135"><a href="#load_study-135"><span class="linenos">135</span></a><span class="sd">    Args:</span>
+</span><span id="load_study-136"><a href="#load_study-136"><span class="linenos">136</span></a><span class="sd">        processed: Folder written by ``scripts/preprocess.py``.</span>
+</span><span id="load_study-137"><a href="#load_study-137"><span class="linenos">137</span></a><span class="sd">        variable: ``"co2"``, ``"temp"``, ``"rh"`` or ``"pressure"``.</span>
+</span><span id="load_study-138"><a href="#load_study-138"><span class="linenos">138</span></a><span class="sd">        sensor: Sensor id.</span>
+</span><span id="load_study-139"><a href="#load_study-139"><span class="linenos">139</span></a>
+</span><span id="load_study-140"><a href="#load_study-140"><span class="linenos">140</span></a><span class="sd">    Returns:</span>
+</span><span id="load_study-141"><a href="#load_study-141"><span class="linenos">141</span></a><span class="sd">        A :class:`Study`. For the secondary sensor, ``occ`` is None and the</span>
+</span><span id="load_study-142"><a href="#load_study-142"><span class="linenos">142</span></a><span class="sd">        whole series is labelled ``"test"``.</span>
+</span><span id="load_study-143"><a href="#load_study-143"><span class="linenos">143</span></a>
+</span><span id="load_study-144"><a href="#load_study-144"><span class="linenos">144</span></a><span class="sd">    Raises:</span>
+</span><span id="load_study-145"><a href="#load_study-145"><span class="linenos">145</span></a><span class="sd">        FileNotFoundError: If preprocessing has not been run.</span>
+</span><span id="load_study-146"><a href="#load_study-146"><span class="linenos">146</span></a>
+</span><span id="load_study-147"><a href="#load_study-147"><span class="linenos">147</span></a><span class="sd">    Example:</span>
+</span><span id="load_study-148"><a href="#load_study-148"><span class="linenos">148</span></a><span class="sd">        &gt;&gt;&gt; st = load_study("data/processed", "co2")  # doctest: +SKIP</span>
+</span><span id="load_study-149"><a href="#load_study-149"><span class="linenos">149</span></a><span class="sd">        &gt;&gt;&gt; st.unit, sorted(set(st.split))  # doctest: +SKIP</span>
+</span><span id="load_study-150"><a href="#load_study-150"><span class="linenos">150</span></a><span class="sd">        ('ppm', ['test', 'train', 'val'])</span>
+</span><span id="load_study-151"><a href="#load_study-151"><span class="linenos">151</span></a><span class="sd">    """</span>
+</span><span id="load_study-152"><a href="#load_study-152"><span class="linenos">152</span></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">UNITS</span>
+</span><span id="load_study-153"><a href="#load_study-153"><span class="linenos">153</span></a>
+</span><span id="load_study-154"><a href="#load_study-154"><span class="linenos">154</span></a>    <span class="n">processed</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">processed</span><span class="p">)</span>
+</span><span id="load_study-155"><a href="#load_study-155"><span class="linenos">155</span></a>    <span class="n">f</span> <span class="o">=</span> <span class="n">processed</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"env_</span><span class="si">{</span><span class="n">sensor</span><span class="si">}</span><span class="s2">.parquet"</span>
+</span><span id="load_study-156"><a href="#load_study-156"><span class="linenos">156</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+</span><span id="load_study-157"><a href="#load_study-157"><span class="linenos">157</span></a>        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2"> not found - run scripts/preprocess.py (or notebook 00) first"</span><span class="p">)</span>
+</span><span id="load_study-158"><a href="#load_study-158"><span class="linenos">158</span></a>    <span class="n">env</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+</span><span id="load_study-159"><a href="#load_study-159"><span class="linenos">159</span></a>    <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+</span><span id="load_study-160"><a href="#load_study-160"><span class="linenos">160</span></a>    <span class="n">y</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="n">variable</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+</span><span id="load_study-161"><a href="#load_study-161"><span class="linenos">161</span></a>    <span class="k">if</span> <span class="n">sensor</span> <span class="o">==</span> <span class="n">PRIMARY_SENSOR</span><span class="p">:</span>
+</span><span id="load_study-162"><a href="#load_study-162"><span class="linenos">162</span></a>        <span class="n">occ_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">processed</span> <span class="o">/</span> <span class="s2">"occupancy.parquet"</span><span class="p">)</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
+</span><span id="load_study-163"><a href="#load_study-163"><span class="linenos">163</span></a>        <span class="n">occ</span> <span class="o">=</span> <span class="n">occ_df</span><span class="p">[</span><span class="n">OCC_PROXY_SPACES</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">min_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">OCC_PROXY_SPACES</span><span class="p">))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+</span><span id="load_study-164"><a href="#load_study-164"><span class="linenos">164</span></a>        <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ts</span> <span class="o">&lt;</span> <span class="n">TRAIN_END</span><span class="p">,</span> <span class="s2">"train"</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ts</span> <span class="o">&lt;</span> <span class="n">VAL_END</span><span class="p">,</span> <span class="s2">"val"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">))</span>
+</span><span id="load_study-165"><a href="#load_study-165"><span class="linenos">165</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="load_study-166"><a href="#load_study-166"><span class="linenos">166</span></a>        <span class="n">occ</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="load_study-167"><a href="#load_study-167"><span class="linenos">167</span></a>        <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ts</span><span class="p">),</span> <span class="s2">"test"</span><span class="p">)</span>
+</span><span id="load_study-168"><a href="#load_study-168"><span class="linenos">168</span></a>    <span class="k">return</span> <span class="n">Study</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">occ</span><span class="p">,</span> <span class="n">split</span><span class="p">,</span> <span class="n">variable</span><span class="p">,</span> <span class="n">UNITS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">variable</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
 </span></pre></div>
 
 
@@ -713,6 +874,17 @@ any occupancy space).</li>
 <ul>
 <li><strong>FileNotFoundError:</strong>  If preprocessing has not been run.</li>
 </ul>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">st</span> <span class="o">=</span> <span class="n">load_study</span><span class="p">(</span><span class="s2">"data/processed"</span><span class="p">,</span> <span class="s2">"co2"</span><span class="p">)</span>  <span class="c1"># doctest: +SKIP</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">st</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">split</span><span class="p">))</span>  <span class="c1"># doctest: +SKIP</span>
+<span class="go">('ppm', ['test', 'train', 'val'])</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
 

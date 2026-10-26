@@ -22,12 +22,27 @@ dependencies = [
 
 [project.optional-dependencies]
 deep = ["torch>=2.1"]
-dev = ["pytest>=7", "pytest-html>=4", "pdoc>=14", "nbformat>=5", "nbclient>=0.8", "ipykernel"]
+dev = ["pytest>=7", "pytest-html>=4", "pdoc>=14", "ruff>=0.5", "nbformat>=5", "nbclient>=0.8", "ipykernel"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
+# Unit tests plus the runnable examples in every docstring (doctests), so the
+# documented usage can never drift away from the code.
+testpaths = ["tests", "src/sensorfill"]
+addopts = "-q --doctest-modules"
 markers = ["slow: long-running tests (deep learning)"]
+
+[tool.ruff]
+line-length = 130
+src = ["src"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, bugbear, pyupgrade, simplify. Upper-case names such as
+# A, M, L follow the mathematical notation of the unit and are allowed.
+select = ["E", "F", "W", "B", "UP", "SIM"]
+ignore = ["E501", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E731"]

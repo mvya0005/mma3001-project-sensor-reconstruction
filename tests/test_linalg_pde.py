@@ -8,6 +8,7 @@ from sensorfill import linalg, pde
 
 
 def test_thomas_matches_dense_solve(rng):
+    """Thomas algorithm agrees with a dense LAPACK solve on a diagonally dominant system."""
     n = 50
     a, c = rng.uniform(-1, 1, n), rng.uniform(-1, 1, n)
     b = 4 + rng.uniform(0, 1, n)  # diagonally dominant
@@ -17,6 +18,7 @@ def test_thomas_matches_dense_solve(rng):
 
 
 def test_gauss_solve_with_pivoting():
+    """Partial pivoting handles a zero first pivot, and a singular matrix is reported."""
     A = np.array([[0.0, 2, 1], [1, 1, 1], [2, 1, 0]])  # zero first pivot needs a row swap
     b = np.array([3.0, 3, 3])
     np.testing.assert_allclose(linalg.gauss_solve(A, b), np.linalg.solve(A, b))
@@ -25,6 +27,7 @@ def test_gauss_solve_with_pivoting():
 
 
 def test_fold_unfold_roundtrip():
+    """Folding into days and unfolding returns the original series exactly."""
     y = np.arange(500, dtype=float)
     M = linalg.fold_daily(y, 144, offset=30)
     assert M.shape[1] == 144 and M[1, 0] == 30
@@ -32,6 +35,7 @@ def test_fold_unfold_roundtrip():
 
 
 def test_svd_impute_recovers_low_rank(rng):
+    """Hard-impute recovers a rank-2 matrix with 20 % missing and its update shrinks."""
     U, V = rng.normal(size=(30, 2)), rng.normal(size=(2, 40))
     M = U @ V
     Mm = M.copy()
@@ -43,6 +47,7 @@ def test_svd_impute_recovers_low_rank(rng):
 
 
 def test_svd_impute_validation():
+    """Invalid rank or a fully missing column is rejected."""
     with pytest.raises(ValueError):
         linalg.svd_impute(np.ones((3, 3)), rank=4)
     M = np.ones((3, 3))
@@ -52,6 +57,7 @@ def test_svd_impute_validation():
 
 
 def test_condition_number():
+    """Condition number of diag(1, 10) is 10."""
     assert linalg.condition_number(np.diag([1.0, 10.0])) == pytest.approx(10.0)
 
 
@@ -65,6 +71,7 @@ def test_laplace_1d_equals_linear_interpolation(method):
 
 
 def test_sor_converges_faster_than_gs_and_jacobi():
+    """With the optimal omega, SOR needs fewer sweeps than Gauss-Seidel, which needs fewer than Jacobi."""
     y = np.r_[[0.0], np.full(40, np.nan), [1.0]]
     its = {m: pde.laplace_fill(y, method=m, tol=1e-8, return_info=True)[1].iterations for m in ("jacobi", "gs")}
     its["sor"] = pde.laplace_fill(y, method="sor", omega=pde.optimal_sor_omega(40), tol=1e-8, return_info=True)[1].iterations
@@ -72,11 +79,13 @@ def test_sor_converges_faster_than_gs_and_jacobi():
 
 
 def test_sor_rejects_bad_omega():
+    """omega outside (0, 2) cannot converge and is rejected."""
     with pytest.raises(ValueError):
         pde.laplace_fill(np.array([0, np.nan, 1.0]), method="sor", omega=2.5)
 
 
 def test_ftcs_stable_below_limit_and_unstable_above():
+    """FTCS converges to the Laplace solution for r < 0.5 and diverges for r > 0.5."""
     y = np.r_[[0.0], np.full(30, np.nan), [1.0]]
     r_max = pde.ftcs_stability_limit()
     assert r_max == pytest.approx(0.5)
@@ -88,6 +97,7 @@ def test_ftcs_stable_below_limit_and_unstable_above():
 
 
 def test_crank_nicolson_stable_for_large_steps():
+    """Crank-Nicolson stays stable at r = 5, ten times the explicit limit."""
     y = np.r_[[0.0], np.full(30, np.nan), [1.0]]
     out, info = pde.diffusion_fill(y, r=5.0, scheme="cn", n_steps=20000, tol=1e-10, return_info=True)
     assert info.converged
@@ -95,6 +105,7 @@ def test_crank_nicolson_stable_for_large_steps():
 
 
 def test_day_coupled_laplace_uses_previous_day(daily_signal):
+    """Coupling to the previous/next day beats 1-D (linear) Laplace on a long gap."""
     _, clean, _, _ = daily_signal
     y = clean.copy()
     y[144 * 2 + 60 : 144 * 2 + 100] = np.nan
