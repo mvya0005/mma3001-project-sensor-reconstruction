@@ -21,8 +21,6 @@ import json
 import time
 from pathlib import Path
 
-import numpy as np
-
 from sensorfill import data
 
 ENV_ZIP = "5EnvSensor_MayToDec2024_180kRows.zip"
@@ -32,6 +30,15 @@ SENSORS = ["6012002000869", "6012002000326"]
 
 
 def main(raw: Path, out: Path) -> None:
+    """Run the whole preprocessing pipeline and write the processed files.
+
+    Args:
+        raw: Folder holding the two raw zip files.
+        out: Output folder (created if missing).
+
+    Raises:
+        FileNotFoundError: If a raw zip file is missing.
+    """
     out.mkdir(parents=True, exist_ok=True)
     audit = {}
     t0 = time.perf_counter()

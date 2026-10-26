@@ -38,8 +38,8 @@ complete. Use this as a checklist before submitting.
 | HTML documentation of source | `docs/api/index.html` (pdoc; rebuild with `scripts/build_docs.sh`) | done |
 | Licence | `LICENSE` (MIT; data excluded) | done |
 | Source code, functional main branch | `src/sensorfill/`; CI runs the tests on every push | done after push |
-| Inline comments and docstrings | Google-style docstrings in every public function, with Args/Returns/Raises | done |
-| Test functions and test report | `tests/` (87 tests); `reports/tests/test_report.html` | done |
+| Inline comments and docstrings | Google-style docstrings in every public function and class, with Args/Returns/Raises and a runnable Example (103 doctests run by pytest) | done |
+| Test functions and test report | `tests/` (87 unit tests, each with a docstring) plus 103 doctests; `reports/tests/test_report.html` | done |
 | Zipped clone submitted to Moodle | — | **student** |
 | Accessible repository link | repository must be public, or shared with the marker | **student** |
 
@@ -66,7 +66,7 @@ complete. Use this as a checklist before submitting.
 ### Inline comments, docstrings and HTML documentation
 - Comments explain *why* (e.g. pivoting, stability limits, leakage
   avoidance), not what the line does.
-- Google-style docstrings with Args, Returns and Raises throughout.
+- Google-style docstrings with Args, Returns, Raises and a runnable Example throughout; pytest runs the examples as doctests and CI checks the docs build.
 - pdoc HTML is generated from the same docstrings, so the docs stay in sync
   (rebuild before submitting).
 

@@ -19,6 +19,15 @@ Methods
 * :func:`fill_pchip` - shape-preserving monotone cubic (SciPy), avoids overshoot.
 * :func:`fill_profile` - typical daily profile with endpoint offset correction.
 * :func:`fill_grid2d` - 2-D scattered interpolation over the (day, time-of-day) plane.
+
+Example:
+    >>> import numpy as np
+    >>> from sensorfill.interpolation import fill_linear, fill_locf
+    >>> y = np.array([400.0, np.nan, np.nan, 430.0])
+    >>> fill_linear(y)
+    array([400., 410., 420., 430.])
+    >>> fill_locf(y)
+    array([400., 400., 400., 430.])
 """
 
 from __future__ import annotations
@@ -46,14 +55,40 @@ def _check(y) -> np.ndarray:
 
 
 def gap_spans(isnan: np.ndarray) -> list[tuple[int, int]]:
-    """Return ``(start, stop)`` index pairs (stop exclusive) of each NaN run."""
+    """Locate every contiguous run of missing values.
+
+    Args:
+        isnan: 1-D boolean array (True = missing).
+
+    Returns:
+        List of ``(start, stop)`` index pairs, ``stop`` exclusive, in order.
+
+    Example:
+        >>> [(int(a), int(b)) for a, b in gap_spans(np.array([0, 1, 1, 0, 1], dtype=bool))]
+        [(1, 3), (4, 5)]
+    """
     x = np.concatenate([[0], np.asarray(isnan, dtype=np.int8), [0]])
+    # +1 marks the first missing point of a run, -1 the first point after it.
     d = np.diff(x)
-    return list(zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)))
+    return list(zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1), strict=True))
 
 
 def fill_locf(y) -> np.ndarray:
-    """Last observation carried forward (leading NaNs take the first observation)."""
+    """Last observation carried forward (naive baseline).
+
+    Args:
+        y: 1-D series with NaN where data is missing.
+
+    Returns:
+        Filled copy of ``y``. Leading NaNs take the first observation.
+
+    Raises:
+        ValueError: If ``y`` is not 1-D or has fewer than two observed values.
+
+    Example:
+        >>> fill_locf([np.nan, 1.0, np.nan, 3.0])
+        array([1., 1., 1., 3.])
+    """
     y = _check(y)
     return pd.Series(y).ffill().bfill().to_numpy()
 
@@ -63,6 +98,19 @@ def fill_linear(y) -> np.ndarray:
 
     Error for a smooth signal is bounded by ``h^2 max|y''| / 8`` where ``h`` is
     the gap duration, so it degrades quadratically with gap length.
+
+    Args:
+        y: 1-D series with NaN where data is missing.
+
+    Returns:
+        Filled copy of ``y``; gaps at either end hold the nearest observation.
+
+    Raises:
+        ValueError: If ``y`` is not 1-D or has fewer than two observed values.
+
+    Example:
+        >>> fill_linear([0.0, np.nan, np.nan, 3.0])
+        array([0., 1., 2., 3.])
     """
     y = _check(y)
     i = np.arange(y.size)
@@ -82,8 +130,16 @@ def gap_anchors(y: np.ndarray, a: int, b: int, k: int = 3) -> tuple[float, float
 
     Args:
         y: Series with NaNs.
-        a, b: Gap start and stop (exclusive); ``a > 0`` and ``b < len(y)``.
+        a: Index of the first missing point; must be > 0.
+        b: Index just after the last missing point; must be < ``len(y)``.
         k: Observations averaged on each side (k=1 reproduces plain anchors).
+
+    Returns:
+        ``(left, right)`` anchor values.
+
+    Example:
+        >>> gap_anchors(np.array([1.0, 3.0, np.nan, 5.0, 7.0]), 2, 3, k=2)
+        (2.0, 6.0)
     """
     left = y[:a][~np.isnan(y[:a])][-k:]
     right = y[b:][~np.isnan(y[b:])][:k]
@@ -96,6 +152,20 @@ def fill_linear_robust(y, k: int = 3) -> np.ndarray:
     Note the fill no longer passes exactly through the neighbouring readings;
     it passes through their local means, which is the better estimate of the
     *true* signal when readings are noisy.
+
+    Args:
+        y: 1-D series with NaN where data is missing.
+        k: Observations averaged on each side of each gap.
+
+    Returns:
+        Filled copy of ``y`` (observed values unchanged).
+
+    Raises:
+        ValueError: If ``y`` is not 1-D or has fewer than two observed values.
+
+    Example:
+        >>> fill_linear_robust([1.0, 3.0, np.nan, 5.0, 7.0], k=2)
+        array([1., 3., 4., 5., 7.])
     """
     y = _check(y)
     out = y.copy()
@@ -120,7 +190,18 @@ def fill_local_poly(y, k: int = 6, degree: int = 1) -> np.ndarray:
     Args:
         y: Series with NaNs.
         k: Observations used on each side.
-        degree: Polynomial degree (0 = mean, 1 = line, 2 = parabola).
+        degree: Polynomial degree (0 = mean, 1 = line, 2 = parabola). It is
+            reduced automatically if too few nodes are available.
+
+    Returns:
+        Filled copy of ``y`` (observed values unchanged).
+
+    Raises:
+        ValueError: If ``y`` is not 1-D or has fewer than two observed values.
+
+    Example:
+        >>> np.round(fill_local_poly([0.0, 1.0, np.nan, 3.0, 4.0], k=2, degree=1), 6)
+        array([0., 1., 2., 3., 4.])
     """
     y = _check(y)
     ok = ~np.isnan(y)
@@ -151,6 +232,10 @@ def newton_coefficients(x: np.ndarray, f: np.ndarray) -> np.ndarray:
 
     Raises:
         ValueError: If nodes repeat (division by zero in the table).
+
+    Example:
+        >>> newton_coefficients([0.0, 1.0, 2.0], [1.0, 3.0, 7.0])  # 1 + 2t + t(t-1)
+        array([1., 2., 1.])
     """
     x = np.asarray(x, dtype=float)
     c = np.array(f, dtype=float, copy=True)
@@ -163,7 +248,21 @@ def newton_coefficients(x: np.ndarray, f: np.ndarray) -> np.ndarray:
 
 
 def newton_evaluate(c: np.ndarray, x: np.ndarray, t) -> np.ndarray:
-    """Evaluate a Newton-form polynomial at ``t`` with nested (Horner) multiplication."""
+    """Evaluate a Newton-form polynomial with nested (Horner) multiplication.
+
+    Args:
+        c: Coefficients from :func:`newton_coefficients`.
+        x: The nodes used to build ``c``.
+        t: Points at which to evaluate.
+
+    Returns:
+        ``p(t)`` with the same shape as ``t``.
+
+    Example:
+        >>> x = np.array([0.0, 1.0, 2.0])
+        >>> newton_evaluate(newton_coefficients(x, [1.0, 3.0, 7.0]), x, [3.0])
+        array([13.])
+    """
     t = np.asarray(t, dtype=float)
     p = np.full_like(t, c[-1])
     for k in range(c.size - 2, -1, -1):
@@ -185,6 +284,14 @@ def fill_newton(y, k: int = 2) -> np.ndarray:
 
     Returns:
         Filled copy of ``y``.
+
+    Raises:
+        ValueError: If ``k < 1``, ``y`` is not 1-D, or fewer than two values
+            are observed.
+
+    Example:
+        >>> fill_newton([0.0, 1.0, np.nan, 9.0, 16.0], k=2)  # cubic through x^2 data
+        array([ 0.,  1.,  4.,  9., 16.])
     """
     y = _check(y)
     if k < 1:
@@ -220,6 +327,14 @@ def natural_spline_coefficients(x: np.ndarray, f: np.ndarray):
     Returns:
         ``(x, f, M)`` - knots, values and second derivatives, ready for
         :func:`spline_evaluate`.
+
+    Raises:
+        ValueError: If the knots are not strictly increasing.
+
+    Example:
+        >>> _, _, M = natural_spline_coefficients([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+        >>> M
+        array([ 0., -3.,  0.])
     """
     x = np.asarray(x, dtype=float)
     f = np.asarray(f, dtype=float)
@@ -239,7 +354,20 @@ def natural_spline_coefficients(x: np.ndarray, f: np.ndarray):
 
 
 def spline_evaluate(coef, t) -> np.ndarray:
-    """Evaluate a natural cubic spline returned by :func:`natural_spline_coefficients`."""
+    """Evaluate a natural cubic spline.
+
+    Args:
+        coef: ``(x, f, M)`` from :func:`natural_spline_coefficients`.
+        t: Evaluation points (outside the knots the end cubic is extrapolated).
+
+    Returns:
+        Spline values with the same shape as ``t``.
+
+    Example:
+        >>> coef = natural_spline_coefficients([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+        >>> spline_evaluate(coef, [1.0, 0.5])
+        array([1.    , 0.6875])
+    """
     x, f, M = coef
     t = np.asarray(t, dtype=float)
     i = np.clip(np.searchsorted(x, t) - 1, 0, x.size - 2)
@@ -260,7 +388,15 @@ def fill_spline(y, window: int | None = 36) -> np.ndarray:
             through every observation.
 
     Returns:
-        Filled copy of ``y``.
+        Filled copy of ``y``. If a local window holds fewer than 3
+        observations the gap is filled linearly instead.
+
+    Raises:
+        ValueError: If ``y`` is not 1-D or has fewer than two observed values.
+
+    Example:
+        >>> np.round(fill_spline([0.0, 1.0, np.nan, 9.0, 16.0], window=None), 3)
+        array([ 0.   ,  1.   ,  3.875,  9.   , 16.   ])
     """
     y = _check(y)
     ok = ~np.isnan(y)
@@ -297,6 +433,19 @@ def fill_pchip(y) -> np.ndarray:
 
     Monotone between knots, so it cannot overshoot the bracketing values -
     useful for CO2, which should not dip below ambient during a gap.
+
+    Args:
+        y: 1-D series with NaN where data is missing.
+
+    Returns:
+        Filled copy of ``y``.
+
+    Raises:
+        ValueError: If ``y`` is not 1-D or has fewer than two observed values.
+
+    Example:
+        >>> fill_pchip([0.0, 0.0, np.nan, 1.0, 1.0])  # flat-step-flat: no overshoot
+        array([0. , 0. , 0.5, 1. , 1. ])
     """
     y = _check(y)
     ok = ~np.isnan(y)
@@ -317,6 +466,11 @@ def daily_profile(y, ts: pd.DatetimeIndex, split_weekend: bool = True) -> pd.Ser
 
     Returns:
         Series indexed by ``(is_weekend, minute_of_day)``.
+
+    Example:
+        >>> ts = pd.date_range("2024-06-03", periods=4, freq="12h")  # Monday
+        >>> daily_profile([400.0, 600.0, 420.0, 620.0], ts).tolist()
+        [410.0, 610.0]
     """
     ts = pd.DatetimeIndex(ts)
     key_we = (ts.dayofweek >= 5) if split_weekend else np.zeros(len(ts), dtype=bool)
@@ -341,6 +495,15 @@ def fill_profile(y, ts, profile: pd.Series | None = None, split_weekend: bool = 
 
     Returns:
         Filled copy of ``y``.
+
+    Raises:
+        ValueError: If ``y`` is not 1-D or has fewer than two observed values.
+
+    Example:
+        >>> ts = pd.date_range("2024-06-03", periods=6, freq="8h")
+        >>> prof = daily_profile([400.0, 600.0, 500.0, 400.0, 600.0, 500.0], ts)
+        >>> fill_profile([410.0, np.nan, 510.0, 410.0, 610.0, 510.0], ts, prof)
+        array([410., 610., 510., 410., 610., 510.])
     """
     y = _check(y)
     ts = pd.DatetimeIndex(ts)
@@ -370,7 +533,17 @@ def fill_grid2d(y, steps_per_day: int, offset: int = 0, method: str = "linear") 
         method: ``"nearest"``, ``"linear"`` or ``"cubic"``.
 
     Returns:
-        Filled copy of ``y``.
+        Filled copy of ``y``. Pixels outside the convex hull of the observed
+        ones (where ``griddata`` returns NaN) fall back to linear in time.
+
+    Raises:
+        ValueError: If ``y`` is not 1-D or has fewer than two observed values.
+
+    Example:
+        >>> y = np.tile([1.0, 2.0, 3.0, 4.0], 3)
+        >>> y[5] = np.nan
+        >>> float(fill_grid2d(y, steps_per_day=4)[5])
+        2.0
     """
     y = _check(y)
     M = fold_daily(y, steps_per_day, offset)
@@ -387,8 +560,20 @@ def fill_grid2d(y, steps_per_day: int, offset: int = 0, method: str = "linear") 
 def runge_demo(n_nodes: int, n_eval: int = 401):
     """Equispaced polynomial interpolation of Runge's function ``1/(1+25x^2)``.
 
-    Returns ``(t, f(t), p(t))`` so that notebooks can show why high-degree
-    global polynomials are a poor choice for long gaps.
+    Used in notebook 01 to show why high-degree global polynomials are a
+    poor choice for long gaps: the error near the ends grows with degree.
+
+    Args:
+        n_nodes: Number of equispaced nodes on ``[-1, 1]`` (degree ``n_nodes - 1``).
+        n_eval: Number of evaluation points.
+
+    Returns:
+        ``(t, f(t), p(t))``: evaluation points, true function, interpolant.
+
+    Example:
+        >>> t, f, p = runge_demo(11)
+        >>> bool(np.max(np.abs(f - p)) > 1.0)
+        True
     """
     x = np.linspace(-1, 1, n_nodes)
     f = 1.0 / (1 + 25 * x**2)

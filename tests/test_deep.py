@@ -9,8 +9,10 @@ from sensorfill import deep  # noqa: E402
 
 
 def test_rk4_rollout_matches_exact_decay():
+    """The differentiable RK4 reproduces e^{-t} for dc/dt = -c."""
     class Decay(torch.nn.Module):
         def forward(self, c, u):
+            """Right-hand side of dc/dt = -c."""
             return -c
 
     c0 = torch.ones(1)
@@ -20,6 +22,7 @@ def test_rk4_rollout_matches_exact_decay():
 
 
 def test_bigru_trains_and_fills(daily_signal):
+    """A tiny BiGRU trains with finite loss, fills every gap and leaves observed values unchanged."""
     ts, clean, noisy, occ = daily_signal
     m = deep.BiGRUImputer(window=144, hidden=8, layers=1, device="cpu", seed=0)
     log = m.fit(noisy[:1440], ts[:1440], occ[:1440], noisy[1440:], ts[1440:], occ[1440:],
@@ -34,6 +37,7 @@ def test_bigru_trains_and_fills(daily_signal):
 
 
 def test_physics_informed_parameters_stay_positive(daily_signal):
+    """Log-parameterisation keeps the learned g and lambda physically positive."""
     ts, clean, noisy, occ = daily_signal
     m = deep.BiGRUImputer(window=144, hidden=8, layers=1, physics_weight=1.0, device="cpu")
     m.fit(noisy, ts, occ, epochs=1, steps_per_epoch=2, batch=4, gap_choices=(6,))
@@ -42,6 +46,7 @@ def test_physics_informed_parameters_stay_positive(daily_signal):
 
 
 def test_neural_ode_fill(daily_signal):
+    """The neural ODE fills a gap and the end correction joins the right boundary."""
     ts, clean, noisy, occ = daily_signal
     m = deep.NeuralODE(horizon=12, hidden=8, device="cpu")
     m.fit(noisy, ts, occ, epochs=1, steps_per_epoch=2, batch=8)
@@ -54,6 +59,7 @@ def test_neural_ode_fill(daily_signal):
 
 
 def test_impute_before_fit_raises(daily_signal):
+    """Using an untrained model is an explicit error rather than silent garbage."""
     ts, _, noisy, _ = daily_signal
     with pytest.raises(RuntimeError):
         deep.BiGRUImputer(window=144, hidden=4, layers=1).impute(noisy, ts)

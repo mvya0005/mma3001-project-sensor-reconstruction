@@ -11,6 +11,7 @@ from sensorfill import ml, profiling
 
 
 def test_feature_builder_shapes_and_no_edge_rows(daily_signal):
+    """Features cover exactly the interior gap points, in the documented column order, with no NaN."""
     ts, clean, noisy, occ = daily_signal
     y = noisy.copy()
     y[:5] = np.nan  # edge gap: excluded
@@ -24,12 +25,14 @@ def test_feature_builder_shapes_and_no_edge_rows(daily_signal):
 
 
 def test_feature_builder_length_check(daily_signal):
+    """A series that does not match the timestamp grid is rejected."""
     ts, *_ = daily_signal
     with pytest.raises(ValueError):
         ft.GapFeatureBuilder(ts).build(np.ones(5))
 
 
 def test_training_set_targets_are_residuals(daily_signal):
+    """Training rows, targets and gap groups line up and span many gaps."""
     ts, clean, noisy, occ = daily_signal
     b = ft.GapFeatureBuilder(ts, occ)
     X, r, g = ft.make_training_set(noisy, b, gap_lengths=(3, 24), n_draws=1, rng=0)
@@ -38,6 +41,7 @@ def test_training_set_targets_are_residuals(daily_signal):
 
 @pytest.mark.parametrize("name", ["linear", "ridge", "tree", "forest", "svr", "mlp"])
 def test_every_model_beats_linear_on_periodic_signal(daily_signal, name):
+    """Each regression model learns the daily shape and beats linear interpolation on a long gap."""
     ts, clean, noisy, occ = daily_signal
     n_tr = 10 * 144
     b_tr = ft.GapFeatureBuilder(ts[:n_tr], occ[:n_tr])
@@ -54,11 +58,13 @@ def test_every_model_beats_linear_on_periodic_signal(daily_signal, name):
 
 
 def test_unknown_model():
+    """An unknown model name is rejected."""
     with pytest.raises(ValueError):
         ml.make_model("xgboost")
 
 
 def test_tune_grouped_cv(daily_signal):
+    """Grouped cross-validation runs and picks a value from the grid."""
     ts, clean, noisy, occ = daily_signal
     b = ft.GapFeatureBuilder(ts, occ)
     X, r, g = ft.make_training_set(noisy, b, gap_lengths=(12, 36), n_draws=1, rng=0)
@@ -67,6 +73,7 @@ def test_tune_grouped_cv(daily_signal):
 
 
 def test_benchmark_runs_all_classical_methods(daily_signal):
+    """Every classical method runs without error inside the shared benchmark harness."""
     ts, clean, noisy, occ = daily_signal
     ctx = bm.Context(ts=ts, occ=occ, profile=itp.daily_profile(noisy, ts))
     res = bm.run_benchmark(noisy, ctx, bm.classical_methods(), gap_lengths=(1, 12), n_gaps=5, repeats=1)
@@ -77,11 +84,13 @@ def test_benchmark_runs_all_classical_methods(daily_signal):
 
 
 def test_context_midnight_offset():
+    """The first midnight index is found from the timestamps."""
     ts = pd.date_range("2024-01-01 22:00", periods=50, freq="10min")
     assert bm.Context(ts=ts).midnight_offset == 12
 
 
 def test_profiling_helpers():
+    """Timing, profiling, FLOP and roofline helpers return sensible values."""
     m = profiling.measure(np.sort, np.random.default_rng(0).random(10_000), repeats=2)
     assert m.median_s > 0 and m.peak_mb > 0
     assert "function calls" in profiling.profile_call(np.sort, np.arange(10))
@@ -91,6 +100,7 @@ def test_profiling_helpers():
 
 
 def test_hybrid_method_dispatches_by_gap_length():
+    """Short gaps go to the short-gap method and long gaps to the long-gap method."""
     y = np.r_[np.zeros(5), [np.nan], np.zeros(5), [np.nan] * 4, np.zeros(5)]
     short = lambda yy, c: np.where(np.isnan(yy), 1.0, yy)
     long = lambda yy, c: np.where(np.isnan(yy), 2.0, yy)
@@ -99,6 +109,7 @@ def test_hybrid_method_dispatches_by_gap_length():
 
 
 def test_confidence_table():
+    """Mean and t-interval across repeats are computed per method and gap length."""
     res = pd.DataFrame({"method": ["a"] * 3, "gap_len": [1] * 3, "rmse": [1.0, 2.0, 3.0]})
     ci = bm.confidence_table(res)
     assert ci.loc[("a", 1), "mean"] == 2.0 and ci.loc[("a", 1), "ci95"] > 0

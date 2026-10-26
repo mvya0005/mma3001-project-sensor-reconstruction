@@ -8,6 +8,7 @@ from sensorfill.data import gap_lengths
 
 
 def test_block_mask_only_hides_observed_with_margins(rng):
+    """Masks hide only observed points and keep observed margins either side."""
     obs = rng.random(2000) > 0.05
     m = masking.block_mask(obs, 12, 20, rng, margin=2)
     assert not (m & ~obs).any()
@@ -17,6 +18,7 @@ def test_block_mask_only_hides_observed_with_margins(rng):
 
 
 def test_block_mask_min_observed_allows_real_dropouts():
+    """min_observed < 1 lets a block span isolated real dropouts without hiding them."""
     obs = np.ones(200, dtype=bool)
     obs[::10] = False  # a reading skipped every 10 samples, as in the real data
     with pytest.raises(ValueError):
@@ -26,6 +28,7 @@ def test_block_mask_min_observed_allows_real_dropouts():
 
 
 def test_block_mask_validation():
+    """Zero-length gaps or more gaps than fit are rejected."""
     with pytest.raises(ValueError):
         masking.block_mask(np.ones(10, bool), 0, 1)
     with pytest.raises(ValueError):
@@ -33,6 +36,7 @@ def test_block_mask_validation():
 
 
 def test_random_point_and_empirical_masks(rng):
+    """Random masks hide the requested fraction; empirical masks only use real gap lengths."""
     obs = np.ones(5000, bool)
     m = masking.random_point_mask(obs, 0.1, rng)
     assert m.sum() == 500
@@ -41,6 +45,7 @@ def test_random_point_and_empirical_masks(rng):
 
 
 def test_metrics_known_values():
+    """MAE, RMSE, bias, max error, R^2 and violation count match hand-computed values."""
     t = np.array([1.0, 2.0, 3.0, 4.0])
     p = np.array([1.0, 3.0, 3.0, 2.0])
     m = np.array([False, True, True, True])
@@ -53,5 +58,6 @@ def test_metrics_known_values():
 
 
 def test_metrics_reject_unfilled_points():
+    """A NaN left at a scored point is a method failure and raises."""
     with pytest.raises(ValueError):
         metrics.rmse([1.0, 2.0], [1.0, np.nan])

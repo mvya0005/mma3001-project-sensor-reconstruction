@@ -5,6 +5,12 @@ intensity and FLOPs. :func:`measure` gives repeatable wall-clock time and
 peak Python memory; :func:`profile_call` wraps :mod:`cProfile`;
 :func:`flop_estimates` gives analytical operation counts used in the roofline
 analysis (:func:`roofline`).
+
+Example:
+    >>> from sensorfill.profiling import measure
+    >>> m = measure(sum, range(1000), repeats=2)
+    >>> m.result, m.median_s >= 0
+    (499500, True)
 """
 
 from __future__ import annotations
@@ -15,7 +21,7 @@ import pstats
 import time
 import tracemalloc
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 
@@ -40,7 +46,24 @@ class Measurement:
 
 
 def measure(fn: Callable, *args, repeats: int = 3, **kwargs) -> Measurement:
-    """Time ``fn(*args, **kwargs)`` over ``repeats`` runs and record peak memory once."""
+    """Time ``fn(*args, **kwargs)`` over ``repeats`` runs and record peak memory once.
+
+    Memory is measured in a separate, extra call because ``tracemalloc``
+    slows Python down and would distort the timings.
+
+    Args:
+        fn: Function to measure.
+        *args: Positional arguments for ``fn``.
+        repeats: Number of timed calls.
+        **kwargs: Keyword arguments for ``fn``.
+
+    Returns:
+        A :class:`Measurement`.
+
+    Example:
+        >>> measure(len, [1, 2, 3], repeats=1).result
+        3
+    """
     times = []
     for _ in range(repeats):
         t0 = time.perf_counter()
@@ -57,11 +80,21 @@ def profile_call(fn: Callable, *args, top: int = 15, sort: str = "tottime", patt
     """Run ``fn`` under cProfile and return the formatted top-``top`` table.
 
     Args:
-        fn: Function to profile; ``*args``/``**kwargs`` are passed to it.
+        fn: Function to profile.
+        *args: Positional arguments for ``fn``.
         top: Number of rows to show.
         sort: pstats sort key (``"tottime"`` = time inside the function itself).
         pattern: Optional regular expression; only matching rows are shown
             (e.g. ``"sensorfill|scipy"`` hides Jupyter's own event-loop frames).
+        **kwargs: Keyword arguments for ``fn``.
+
+    Returns:
+        The pstats report as text.
+
+    Example:
+        >>> report = profile_call(sorted, list(range(100)), top=3)
+        >>> "function calls" in report
+        True
     """
     pr = cProfile.Profile()
     pr.enable()
@@ -94,7 +127,13 @@ def flop_estimates(n_missing: int, n_total: int, gap_len: int, *, k_newton: int 
         sor_iters: SOR sweeps.
 
     Returns:
-        ``{method: {"flops": F, "bytes": B, "intensity": F/B}}``.
+        ``{method: {"flops": F, "bytes": B, "intensity": F/B}}`` for
+        ``linear``, ``newton``, ``spline``, ``svd`` and ``sor``.
+
+    Example:
+        >>> est = flop_estimates(n_missing=600, n_total=10_000, gap_len=6)
+        >>> est["linear"]["intensity"]  # 3 flops per 24 bytes: memory bound
+        0.125
     """
     n_gaps = max(1, n_missing // max(gap_len, 1))
     m = 2 * k_newton
@@ -115,6 +154,13 @@ def roofline(intensity: np.ndarray, peak_gflops: float, bandwidth_gbs: float) ->
         intensity: Arithmetic intensity [FLOP/byte].
         peak_gflops: Peak compute of the device [GFLOP/s].
         bandwidth_gbs: Memory bandwidth [GB/s].
+
+    Returns:
+        Attainable GFLOP/s for each intensity.
+
+    Example:
+        >>> roofline([0.1, 100.0], peak_gflops=70.0, bandwidth_gbs=15.0)
+        array([ 1.5, 70. ])
     """
     return np.minimum(peak_gflops, np.asarray(intensity) * bandwidth_gbs)
 

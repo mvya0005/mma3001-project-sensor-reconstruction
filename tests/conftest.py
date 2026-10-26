@@ -7,6 +7,7 @@ import pytest
 
 @pytest.fixture
 def rng():
+    """Fixed-seed random generator so every test is repeatable."""
     return np.random.default_rng(42)
 
 

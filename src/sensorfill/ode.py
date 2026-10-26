@@ -22,12 +22,20 @@ Assumptions (all stated in the report): perfect mixing; constant ventilation
 rate; occupancy measured in *another* zone is a proportional proxy for this
 zone (so ``g`` is an effective, not physical, emission rate); outdoor CO2
 constant over the study period.
+
+Example:
+    >>> import numpy as np
+    >>> from sensorfill.ode import CO2Params, simulate_co2
+    >>> p = CO2Params(g=0.0, lam=1.0, c_out=420.0)  # empty room, 1 air change per hour
+    >>> c = simulate_co2(p, np.array([0.0, 1.0]), np.zeros(2), c0=800.0, method="exact_linear")
+    >>> round(float(c[-1]), 1)  # 420 + 380 e^-1
+    559.8
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 from scipy.optimize import least_squares
@@ -45,6 +53,13 @@ def finite_difference(y: np.ndarray, h: float, scheme: str = "central") -> np.nd
 
     Returns:
         Derivative estimate, same length as ``y``.
+
+    Raises:
+        ValueError: If ``scheme`` is not one of the three names.
+
+    Example:
+        >>> finite_difference([0.0, 1.0, 4.0, 9.0], h=1.0)  # y = x^2
+        array([1., 2., 4., 5.])
     """
     y = np.asarray(y, dtype=float)
     d = np.empty_like(y)
@@ -64,7 +79,20 @@ def finite_difference(y: np.ndarray, h: float, scheme: str = "central") -> np.nd
 
 
 def second_difference(y: np.ndarray, h: float) -> np.ndarray:
-    """Central second derivative ``(y[i+1] - 2y[i] + y[i-1]) / h^2`` (ends NaN)."""
+    """Central second derivative ``(y[i+1] - 2y[i] + y[i-1]) / h^2``.
+
+    Args:
+        y: Uniform samples.
+        h: Sample spacing.
+
+    Returns:
+        Second-derivative estimate, same length as ``y``; the two end values
+        are NaN because the stencil does not fit there.
+
+    Example:
+        >>> second_difference([0.0, 1.0, 4.0, 9.0], h=1.0)
+        array([nan,  2.,  2., nan])
+    """
     y = np.asarray(y, dtype=float)
     d = np.full_like(y, np.nan)
     d[1:-1] = (y[2:] - 2 * y[1:-1] + y[:-2]) / h**2
@@ -90,14 +118,22 @@ def integrate(
             ``"midpoint"`` (explicit RK2), ``"rk4"`` (classical RK, order 4),
             ``"implicit_euler"`` (backward Euler, order 1, A-stable) or
             ``"trapezoid"`` (implicit, order 2, A-stable).
-        newton_tol, newton_max: Newton-iteration settings for implicit methods
-            (Jacobian by forward finite differences).
+        newton_tol: Relative step-size tolerance of the Newton iteration used
+            by the implicit methods (Jacobian by forward finite differences).
+        newton_max: Maximum Newton iterations per implicit step.
 
     Returns:
         Array of shape ``(len(t), dim)``.
 
     Raises:
         RuntimeError: If the implicit Newton iteration fails to converge.
+        ValueError: If ``method`` is unknown.
+
+    Example:
+        >>> t = np.linspace(0.0, 1.0, 11)
+        >>> Y = integrate(lambda t, y: -y, 1.0, t, method="rk4")  # exact: e^-1
+        >>> round(float(Y[-1, 0]), 6)
+        0.36788
     """
     y0 = np.atleast_1d(np.asarray(y0, dtype=float))
     Y = np.empty((len(t), y0.size))
@@ -123,7 +159,8 @@ def integrate(
             theta = 1.0 if method == "implicit_euler" else 0.5
             fn = f(tn, yn)
 
-            def G(z):  # residual of the implicit update
+            def G(z, yn=yn, h=h, tn=tn, fn=fn, theta=theta):
+                """Residual of the implicit (theta-method) update; zero at the new state."""
                 return z - yn - h * (theta * f(tn + h, z) + (1 - theta) * fn)
 
             z = yn + h * fn  # explicit predictor
@@ -148,9 +185,24 @@ ORDER = {"euler": 1, "implicit_euler": 1, "heun": 2, "midpoint": 2, "trapezoid":
 
 
 def amplification_factor(method: str, z: complex) -> complex:
-    """Stability function ``R(z)`` of a method for the test equation ``y' = lambda y``, ``z = h lambda``.
+    """Stability function ``R(z)`` of a method for the test equation ``y' = lambda y``.
 
-    A step is stable when ``|R(z)| <= 1``. For the CO2 model ``z = -h lambda``.
+    One step multiplies the solution by ``R(z)`` with ``z = h lambda``, so a
+    step is stable when ``|R(z)| <= 1``. For the CO2 model ``z = -h lambda``.
+
+    Args:
+        method: A key of :data:`ORDER`.
+        z: ``h * lambda`` (complex allowed).
+
+    Returns:
+        ``R(z)``.
+
+    Raises:
+        ValueError: If ``method`` is unknown.
+
+    Example:
+        >>> amplification_factor("euler", -3.0), amplification_factor("implicit_euler", -3.0)
+        (-2.0, 0.25)
     """
     if method == "euler":
         return 1 + z
@@ -184,37 +236,74 @@ class CO2Params:
 
     @property
     def time_constant_h(self) -> float:
-        """Room time constant ``1/lambda`` in hours."""
+        """Room time constant ``1/lambda`` in hours.
+
+        Returns:
+            The e-folding time of a CO2 disturbance once the room empties.
+
+        Example:
+            >>> CO2Params(g=10.0, lam=2.0, c_out=420.0).time_constant_h
+            0.5
+        """
         return 1.0 / self.lam
 
 
 def co2_rhs(params: CO2Params, occ: Callable[[float], float]):
-    """Return ``f(t, C)`` for the mass balance with occupancy function ``occ(t)``."""
+    """Build the right-hand side of the CO2 mass balance.
+
+    Args:
+        params: Model parameters.
+        occ: Occupancy as a function of time in hours.
+
+    Returns:
+        ``f(t, C) = g occ(t) - lambda (C - C_out) + s``, ready for :func:`integrate`.
+
+    Example:
+        >>> f = co2_rhs(CO2Params(g=10.0, lam=1.0, c_out=400.0), lambda t: 2.0)
+        >>> f(0.0, 420.0)
+        0.0
+    """
 
     def f(t, C):
+        """dC/dt [ppm/h] at time ``t`` [h] and concentration ``C`` [ppm]."""
         return params.g * occ(t) - params.lam * (C - params.c_out) + params.s
 
     return f
 
 
 def simulate_co2(params: CO2Params, t_h: np.ndarray, occ_values: np.ndarray, c0: float, method: str = "rk4") -> np.ndarray:
-    """Simulate CO2 given occupancy sampled on the same grid (linearly interpolated between samples).
+    """Simulate CO2 given occupancy sampled on the same grid.
+
+    Occupancy is linearly interpolated between samples, so RK stages that fall
+    between grid points see a consistent input.
 
     Args:
         params: Model parameters.
         t_h: Time grid in hours.
         occ_values: Occupancy at ``t_h`` (persons; NaN treated as 0).
         c0: Initial concentration [ppm].
-        method: Integrator (see :func:`integrate`).
+        method: Integrator (see :func:`integrate`), or ``"exact_linear"`` for
+            the closed-form step that is exact for piecewise-linear occupancy
+            (used for parameter fitting and as the verification reference).
 
     Returns:
         Simulated concentration on ``t_h``.
+
+    Raises:
+        ValueError: If ``method`` is unknown.
+
+    Example:
+        >>> p = CO2Params(g=50.0, lam=2.0, c_out=420.0)
+        >>> c = simulate_co2(p, np.linspace(0, 6, 61), np.full(61, 4.0), c0=420.0)
+        >>> round(float(c[-1]))  # steady state 420 + g N / lambda = 520
+        520
     """
     occ_values = np.nan_to_num(np.asarray(occ_values, dtype=float))
     if method == "exact_linear":
         return _simulate_linear_exact(params, t_h, occ_values, c0)
 
     def occ(t):
+        """Occupancy at any time ``t`` by linear interpolation."""
         return np.interp(t, t_h, occ_values)
 
     return integrate(co2_rhs(params, occ), c0, t_h, method)[:, 0]
@@ -254,7 +343,22 @@ def fit_equation_error(C: np.ndarray, occ: np.ndarray, h: float) -> CO2Params:
         h: Grid spacing in hours.
 
     Returns:
-        :class:`CO2Params` (with ``s = 0``).
+        :class:`CO2Params` (with ``s = 0``). ``lambda`` is floored at 1e-3 /h
+        so the fitted ventilation is always positive.
+
+    Note:
+        Differencing noisy data puts noise into the regressor ``dC/dt`` and
+        biases ``lambda``; this estimate is therefore used only as the
+        starting guess for :func:`fit_output_error`.
+
+    Example:
+        >>> p = CO2Params(g=50.0, lam=2.0, c_out=420.0)
+        >>> t = np.arange(0, 48, 0.1)
+        >>> occ = np.where((t % 24 > 8) & (t % 24 < 17), 5.0, 0.0)
+        >>> C = simulate_co2(p, t, occ, 420.0, method="exact_linear")
+        >>> est = fit_equation_error(C, occ, h=0.1)
+        >>> bool(abs(est.c_out - 420) < 20)
+        True
     """
     dC = finite_difference(C, h, "central")
     X = np.column_stack([occ, C, np.ones_like(C)])
@@ -283,13 +387,25 @@ def fit_output_error(
         fit_s: Also fit the constant source ``s``.
 
     Returns:
-        ``(params, scipy_result)``.
+        ``(params, scipy_result)`` where ``scipy_result`` is the
+        :class:`scipy.optimize.OptimizeResult` from ``least_squares``.
+
+    Example:
+        >>> true = CO2Params(g=50.0, lam=2.0, c_out=420.0)
+        >>> t = np.arange(0, 24, 1 / 6)
+        >>> occ = np.where((t > 8) & (t < 17), 5.0, 0.0)
+        >>> C = simulate_co2(true, t, occ, 420.0, method="exact_linear")
+        >>> fit, _ = fit_output_error([(t, C, occ)], CO2Params(30.0, 1.0, 400.0))
+        >>> round(fit.g, 3), round(fit.lam, 3), round(fit.c_out, 3)
+        (50.0, 2.0, 420.0)
     """
 
     def unpack(p):
-        return CO2Params(p[0], p[1], p[2], p[3] if fit_s else 0.0)
+        """Turn the optimiser's parameter vector into :class:`CO2Params`."""
+        return CO2Params(float(p[0]), float(p[1]), float(p[2]), float(p[3]) if fit_s else 0.0)
 
     def resid(p):
+        """Simulation-minus-measurement residuals over all segments."""
         prm = unpack(p)
         return np.concatenate([simulate_co2(prm, t, o, C[0], method) - C for t, C, o in segments])
 
@@ -302,10 +418,25 @@ def fit_output_error(
 
 # --------------------------------------------------- gap filling: IVP & BVP
 def secant(fun: Callable[[float], float], x0: float, x1: float, tol: float = 1e-8, max_iter: int = 50):
-    """Secant root finder; returns ``(root, iterations)``.
+    """Secant root finder (derivative-free Newton).
+
+    Args:
+        fun: Scalar function whose root is wanted.
+        x0: First starting point.
+        x1: Second starting point.
+        tol: Stop when ``|fun(x)| < tol`` or the step is below ``tol * (1 + |x|)``.
+        max_iter: Iteration cap.
+
+    Returns:
+        ``(root, iterations)``.
 
     Raises:
         RuntimeError: If it fails to converge or the secant slope vanishes.
+
+    Example:
+        >>> root, k = secant(lambda x: x**2 - 2, 1.0, 2.0)
+        >>> round(root, 8)
+        1.41421356
     """
     f0, f1 = fun(x0), fun(x1)
     for k in range(1, max_iter + 1):
@@ -344,11 +475,30 @@ def fill_ode(
         return_iterations: Also return the list of secant iteration counts.
 
     Returns:
-        Filled copy of ``y`` (and iteration counts). Gaps touching the series
-        ends fall back to ``"ivp"`` (start) or hold-last-value (end).
+        Filled copy of ``y`` (and iteration counts). A gap at the end of the
+        series has no right boundary, so it is always integrated as an IVP; a
+        gap at the start has no left boundary, so it holds the first
+        observation.
+
+    Raises:
+        ValueError: If ``mode`` is not ``"ivp"`` or ``"shooting"``.
+        RuntimeError: If the shooting iteration fails to converge.
+
+    Example:
+        >>> p = CO2Params(g=50.0, lam=2.0, c_out=420.0)
+        >>> t = np.arange(0, 12, 1 / 6)
+        >>> occ = np.where((t > 3) & (t < 9), 5.0, 0.0)
+        >>> truth = simulate_co2(p, t, occ, 420.0, method="exact_linear")
+        >>> y = truth.copy()
+        >>> y[20:40] = np.nan
+        >>> filled = fill_ode(y, occ, p, h=1 / 6)
+        >>> bool(np.max(np.abs(filled - truth)) < 0.5)
+        True
     """
     from .interpolation import fill_locf, gap_spans
 
+    if mode not in ("ivp", "shooting"):
+        raise ValueError("mode must be 'ivp' or 'shooting'")
     y = np.array(y, dtype=float, copy=True)
     miss = np.isnan(y)
     iters = []
@@ -363,15 +513,14 @@ def fill_ode(
         elif mode == "shooting":
             target = y[b]
 
-            def miss_end(s):
+            def miss_end(s, t=t, o=o, c0=c0, target=target):
+                """Miss distance at the right boundary for an extra source ``s``."""
                 p = CO2Params(params.g, params.lam, params.c_out, params.s + s)
                 return simulate_co2(p, t, o, c0, method)[-1] - target
 
             s_star, k = secant(miss_end, 0.0, 10.0)
             iters.append(k)
             sim = simulate_co2(CO2Params(params.g, params.lam, params.c_out, params.s + s_star), t, o, c0, method)
-        else:
-            raise ValueError("mode must be 'ivp' or 'shooting'")
         y[a:b] = sim[1 : 1 + (b - a)]
     y = fill_locf(y)
     return (y, iters) if return_iterations else y

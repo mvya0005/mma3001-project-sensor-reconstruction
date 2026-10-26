@@ -7,6 +7,7 @@ from sensorfill import interpolation as itp
 
 
 def poly_with_gap(deg, n=60, gap=(20, 30)):
+    """Polynomial of the given degree with a block of NaN, plus the exact values."""
     x = np.arange(n, dtype=float)
     f = 0.001 * (x - 25) ** deg + 3
     y = f.copy()
@@ -15,11 +16,13 @@ def poly_with_gap(deg, n=60, gap=(20, 30)):
 
 
 def test_linear_exact_on_lines():
+    """Linear interpolation is exact for straight-line data."""
     f, y = poly_with_gap(1)
     np.testing.assert_allclose(itp.fill_linear(y), f)
 
 
 def test_observed_values_are_never_changed(daily_signal):
+    """Every fill method returns observed points unchanged and leaves no NaN."""
     _, _, noisy, _ = daily_signal
     y = noisy.copy()
     y[100:140] = np.nan
@@ -31,12 +34,14 @@ def test_observed_values_are_never_changed(daily_signal):
 
 
 def test_newton_divided_differences_reproduce_cubic():
+    """A 4-node Newton polynomial (degree 3) reproduces cubic data to round-off."""
     f, y = poly_with_gap(3)
     # k=2 uses 4 nodes -> exact for cubics (degree 2k-1).
     np.testing.assert_allclose(itp.fill_newton(y, k=2), f, rtol=1e-10)
 
 
 def test_newton_coefficients_textbook_example():
+    """Divided differences of x^2 match the hand calculation, and repeated nodes are rejected."""
     # f(x) = x^2 at 0,1,2 -> c = [0, 1, 1].
     c = itp.newton_coefficients(np.array([0.0, 1, 2]), np.array([0.0, 1, 4]))
     np.testing.assert_allclose(c, [0, 1, 1])
@@ -46,6 +51,7 @@ def test_newton_coefficients_textbook_example():
 
 
 def test_natural_spline_matches_scipy():
+    """Our tridiagonal natural spline agrees with SciPy's CubicSpline to 1e-10."""
     from scipy.interpolate import CubicSpline
 
     x = np.sort(np.random.default_rng(0).uniform(0, 10, 15))
@@ -69,17 +75,20 @@ def test_spline_error_converges_at_fourth_order():
 
 
 def test_pchip_does_not_overshoot():
+    """PCHIP stays within the bracketing values across a step (no overshoot)."""
     y = np.array([0, 0, 0, np.nan, np.nan, 1, 1, 1], dtype=float)
     out = itp.fill_pchip(y)
     assert out.min() >= 0 and out.max() <= 1
 
 
 def test_runge_phenomenon_grows_with_degree():
+    """Equispaced interpolation error on Runge's function grows with degree."""
     errs = [np.max(np.abs(f - p)) for _, f, p in (itp.runge_demo(n) for n in (5, 11, 21))]
     assert errs[0] < errs[1] < errs[2]
 
 
 def test_robust_anchors_reduce_noise_error(daily_signal):
+    """Averaging k=3 anchors beats single-point anchors on noisy data."""
     _, clean, noisy, _ = daily_signal
     rng = np.random.default_rng(1)
     starts = rng.choice(np.arange(10, clean.size - 10), 300, replace=False)
@@ -91,11 +100,13 @@ def test_robust_anchors_reduce_noise_error(daily_signal):
 
 
 def test_local_poly_exact_on_line():
+    """Local least-squares degree-1 fit is exact on a line."""
     f, y = poly_with_gap(1)
     np.testing.assert_allclose(itp.fill_local_poly(y, k=5, degree=1), f)
 
 
 def test_profile_fill_recovers_periodic_signal(daily_signal):
+    """On a purely periodic signal the profile fill is exact where linear is badly wrong."""
     ts, clean, _, _ = daily_signal
     y = clean.copy()
     y[144 * 8 + 50 : 144 * 8 + 120] = np.nan  # 70-step gap on a Tuesday
@@ -106,6 +117,7 @@ def test_profile_fill_recovers_periodic_signal(daily_signal):
 
 
 def test_grid2d_uses_neighbouring_days(daily_signal):
+    """2-D interpolation uses the same time on other days and beats linear on a long gap."""
     ts, clean, _, _ = daily_signal
     y = clean.copy()
     y[144 * 2 + 60 : 144 * 2 + 100] = np.nan  # Wednesday afternoon (neighbours are workdays)
@@ -116,6 +128,7 @@ def test_grid2d_uses_neighbouring_days(daily_signal):
 
 
 def test_input_validation():
+    """Too few observations or a 2-D input are rejected with ValueError."""
     with pytest.raises(ValueError):
         itp.fill_linear(np.array([np.nan, 1.0, np.nan]))
     with pytest.raises(ValueError):

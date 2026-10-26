@@ -14,6 +14,22 @@ Designed to train on a Colab GPU (``device="cuda"``) but runs on CPU too.
   time-of-day)`` and integrates it with a differentiable RK4 scheme (10.2).
   A gap is filled by integrating from its left boundary; the end mismatch is
   removed with a linear correction so the fill joins the right boundary.
+
+Both imputers follow the same interface: ``fit(...)`` returns a
+:class:`TrainLog`, and ``impute(y, ts, occ)`` returns a filled copy of ``y``
+in the original units, leaving observed values unchanged.
+
+Example:
+    >>> import numpy as np, pandas as pd
+    >>> from sensorfill.deep import BiGRUImputer
+    >>> ts = pd.date_range("2024-06-03", periods=600, freq="10min")
+    >>> y = 500 + 50 * np.sin(np.arange(600) / 20)
+    >>> m = BiGRUImputer(window=72, hidden=8, layers=1, device="cpu")
+    >>> log = m.fit(y, ts, epochs=1, steps_per_epoch=2, batch=4, gap_choices=(3,))
+    >>> y_gap = y.copy(); y_gap[100:103] = np.nan
+    >>> filled = m.impute(y_gap, ts)
+    >>> bool(np.isfinite(filled).all()), bool((filled[:100] == y[:100]).all())
+    (True, True)
 """
 
 from __future__ import annotations
@@ -35,14 +51,31 @@ from .masking import block_mask
 
 
 def get_device(prefer: str | None = None) -> torch.device:
-    """Return ``cuda`` when available (Colab GPU runtime), else ``cpu``."""
+    """Choose the torch device.
+
+    Args:
+        prefer: Explicit device name (``"cuda"``, ``"cpu"``); None picks
+            ``cuda`` when available (Colab GPU runtime), else ``cpu``.
+
+    Returns:
+        The :class:`torch.device`.
+
+    Example:
+        >>> get_device("cpu")
+        device(type='cpu')
+    """
     if prefer:
         return torch.device(prefer)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def set_seed(seed: int) -> None:
-    """Seed NumPy and PyTorch (CPU and CUDA) for repeatable training."""
+    """Seed NumPy and PyTorch (CPU and CUDA) for repeatable training.
+
+    Args:
+        seed: The seed. GPU kernels may still be non-deterministic, so GPU
+            results are repeatable only to within run-to-run noise.
+    """
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -50,7 +83,19 @@ def set_seed(seed: int) -> None:
 
 
 def calendar_channels(ts) -> np.ndarray:
-    """Time-of-day and day-of-week encoded as sin/cos, shape ``(n, 4)``."""
+    """Encode time of day and day of week on the unit circle.
+
+    Args:
+        ts: Timestamps.
+
+    Returns:
+        float32 array of shape ``(n, 4)``: ``[tod_sin, tod_cos, dow_sin, dow_cos]``.
+        The encoding is continuous at midnight and between Sunday and Monday.
+
+    Example:
+        >>> calendar_channels(pd.DatetimeIndex(["2024-06-03 06:00"])).round(3)
+        array([[1., 0., 0., 1.]], dtype=float32)
+    """
     ts = pd.DatetimeIndex(ts)
     tod = (ts.hour + ts.minute / 60.0).to_numpy() / 24.0
     dow = ts.dayofweek.to_numpy() / 7.0
@@ -61,7 +106,14 @@ def calendar_channels(ts) -> np.ndarray:
 
 @dataclass
 class Scaler:
-    """Standardisation constants computed on the training period only."""
+    """Standardisation constants computed on the training period only.
+
+    Attributes:
+        y_mean: Mean of the target [target units].
+        y_std: Standard deviation of the target (1.0 if it is zero).
+        occ_mean: Mean occupancy [persons].
+        occ_std: Standard deviation of occupancy (1.0 if it is zero).
+    """
 
     y_mean: float
     y_std: float
@@ -69,8 +121,20 @@ class Scaler:
     occ_std: float = 1.0
 
     @classmethod
-    def fit(cls, y, occ=None) -> "Scaler":
-        """Estimate mean and standard deviation (ignoring NaN)."""
+    def fit(cls, y, occ=None) -> Scaler:
+        """Estimate mean and standard deviation (ignoring NaN).
+
+        Args:
+            y: Training target series.
+            occ: Training occupancy, or None.
+
+        Returns:
+            A new :class:`Scaler`.
+
+        Example:
+            >>> Scaler.fit([1.0, 3.0, np.nan]).y_mean
+            2.0
+        """
         o = np.zeros(1) if occ is None else np.asarray(occ, dtype=float)
         return cls(float(np.nanmean(y)), float(np.nanstd(y)) or 1.0, float(np.nanmean(o)), float(np.nanstd(o)) or 1.0)
 
@@ -87,18 +151,27 @@ class _GRUNet(nn.Module):
     """Bidirectional GRU encoder with a linear read-out per time step."""
 
     def __init__(self, n_in: int, hidden: int, layers: int, dropout: float):
+        """Build the GRU stack and the two-layer read-out head."""
         super().__init__()
         self.gru = nn.GRU(n_in, hidden, num_layers=layers, batch_first=True, bidirectional=True, dropout=dropout if layers > 1 else 0.0)
         self.head = nn.Sequential(nn.Linear(2 * hidden, hidden), nn.GELU(), nn.Linear(hidden, 1))
 
-    def forward(self, x):  # x: (batch, time, channels)
+    def forward(self, x):
+        """Map ``(batch, time, channels)`` inputs to ``(batch, time)`` outputs."""
         h, _ = self.gru(x)
         return self.head(h).squeeze(-1)
 
 
 @dataclass
 class TrainLog:
-    """Loss history and timing of a training run."""
+    """Loss history and timing of a training run.
+
+    Attributes:
+        train_loss: Mean training loss per epoch.
+        val_loss: Validation loss per epoch (empty without validation data).
+        seconds: Wall-clock training time [s].
+        best_epoch: Epoch (0-based) with the lowest validation loss.
+    """
 
     train_loss: list = field(default_factory=list)
     val_loss: list = field(default_factory=list)
@@ -121,6 +194,11 @@ class BiGRUImputer:
             parameters, e.g. from :func:`sensorfill.ode.fit_output_error`.
         device: ``"cuda"``, ``"cpu"`` or None for automatic.
         seed: Random seed.
+
+    Attributes:
+        net: The PyTorch network.
+        sc: Training :class:`Scaler` (None until :meth:`fit` is called).
+        log: :class:`TrainLog` of the last training run.
     """
 
     def __init__(
@@ -135,6 +213,7 @@ class BiGRUImputer:
         device: str | None = None,
         seed: int = 0,
     ):
+        """Create the (untrained) network and the learnable physics parameters."""
         set_seed(seed)
         self.window, self.dt = window, dt_hours
         self.device = get_device(device)
@@ -151,8 +230,12 @@ class BiGRUImputer:
 
     # ------------------------------------------------------------ batching
     def _sample_batch(self, y, occ, cal, starts, gap_choices, batch: int):
+        """Draw random windows and hide one random gap in each.
+
+        Returns tensors ``(inputs, normalised truth, hide mask, occupancy)``.
+        """
         W = self.window
-        X, T, M, O = [], [], [], []
+        X, T, M, Occ = [], [], [], []
         for s in self.rng.choice(starts, size=batch):
             yt = y[s : s + W].copy()
             obs = ~np.isnan(yt)
@@ -168,9 +251,13 @@ class BiGRUImputer:
             X.append(_inputs(yo, None if occ is None else occ[s : s + W], cal[s : s + W], self.sc))
             T.append(np.nan_to_num((yt - self.sc.y_mean) / self.sc.y_std))
             M.append(hide.astype(np.float32))
-            O.append(np.zeros(W, np.float32) if occ is None else np.nan_to_num(occ[s : s + W]).astype(np.float32))
-        f = lambda a: torch.tensor(np.stack(a), device=self.device)
-        return f(X), f(T).float(), f(M), f(O)
+            Occ.append(np.zeros(W, np.float32) if occ is None else np.nan_to_num(occ[s : s + W]).astype(np.float32))
+
+        def to_tensor(a):
+            """Stack a list of per-window arrays into one tensor on the model device."""
+            return torch.tensor(np.stack(a), device=self.device)
+
+        return to_tensor(X), to_tensor(T).float(), to_tensor(M), to_tensor(Occ)
 
     def _physics_residual(self, pred_norm, occ):
         """Mean-square CO2 mass-balance residual (ppm/h) of a predicted batch."""
@@ -180,6 +267,7 @@ class BiGRUImputer:
         return ((dC - rhs) / self.sc.y_std).pow(2).mean()
 
     def _forward(self, X):
+        """Normalised prediction: linear baseline (channel 0) plus learned residual."""
         # Network predicts the residual from the (normalised) linear baseline in channel 0.
         return X[..., 0] + self.net(X)
 
@@ -201,8 +289,26 @@ class BiGRUImputer:
     ) -> TrainLog:
         """Train with randomly placed artificial gaps; early-stop on validation loss.
 
-        The data loss is the mean-squared error on hidden points only. Returns
-        the :class:`TrainLog` and restores the best-validation weights.
+        The data loss is the mean-squared error on hidden points only. After
+        training, the weights from the epoch with the lowest validation loss
+        are restored.
+
+        Args:
+            y_train: Training target series (NaN allowed; never used as a target).
+            ts_train: Timestamps of ``y_train``.
+            occ_train: Training occupancy, or None.
+            y_val: Optional validation series for early stopping.
+            ts_val: Timestamps of ``y_val``.
+            occ_val: Validation occupancy, or None.
+            epochs: Maximum number of epochs.
+            steps_per_epoch: Mini-batches per epoch.
+            batch: Windows per mini-batch.
+            lr: Initial AdamW learning rate (cosine-annealed to 0).
+            gap_choices: Artificial gap lengths drawn during training [steps].
+            patience: Stop after this many epochs without validation improvement.
+
+        Returns:
+            The :class:`TrainLog`.
         """
         y_train = np.asarray(y_train, dtype=float)
         self.sc = Scaler.fit(y_train, occ_train)
@@ -227,11 +333,11 @@ class BiGRUImputer:
             self.net.train()
             tot = 0.0
             for _ in range(steps_per_epoch):
-                X, T, M, O = self._sample_batch(y_train, occ_train, cal_tr, starts, gap_choices, batch)
+                X, T, M, Occ = self._sample_batch(y_train, occ_train, cal_tr, starts, gap_choices, batch)
                 pred = self._forward(X)
                 loss = ((pred - T) ** 2 * M).sum() / M.sum().clamp(min=1)
                 if self.physics_weight > 0:
-                    loss = loss + self.physics_weight * self._physics_residual(pred, O)
+                    loss = loss + self.physics_weight * self._physics_residual(pred, Occ)
                 opt.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.net.parameters(), 1.0)  # guards against exploding RNN gradients
@@ -243,7 +349,7 @@ class BiGRUImputer:
                 self.net.eval()
                 with torch.no_grad():
                     pv = self._forward(Xv)
-                    vl = (((pv - Tv) ** 2 * Mv).sum() / Mv.sum()).item()
+                    vl = (((pv - Tv) ** 2 * Mv).sum() / Mv.sum().clamp(min=1)).item()
                 self.log.val_loss.append(vl)
                 if vl < best - 1e-6:
                     best, bad, self.log.best_epoch = vl, 0, ep
@@ -259,7 +365,12 @@ class BiGRUImputer:
 
     @property
     def physics_params(self) -> dict:
-        """Current learned ``g`` [ppm/(person h)], ``lambda`` [1/h] and ``C_out`` [ppm]."""
+        """Current learned physics parameters.
+
+        Returns:
+            ``{"g": [ppm/(person h)], "lam": [1/h], "c_out": [ppm]}``. They
+            only change during training when ``physics_weight > 0``.
+        """
         with torch.no_grad():
             return {"g": float(torch.exp(self.log_g)), "lam": float(torch.exp(self.log_lam)), "c_out": float(self.c_out)}
 
@@ -268,8 +379,20 @@ class BiGRUImputer:
     def impute(self, y, ts, occ=None) -> np.ndarray:
         """Fill every interior gap using a window centred on it.
 
-        Gaps longer than the window minus 16 steps of context, and edge gaps,
-        fall back to linear interpolation (reported, not hidden).
+        Gaps longer than the window minus 16 steps of context, edge gaps, and
+        every gap of a series shorter than one window fall back to linear
+        interpolation (reported, not hidden).
+
+        Args:
+            y: Series with NaNs.
+            ts: Timestamps of ``y``.
+            occ: Occupancy on the same grid, or None (must match training).
+
+        Returns:
+            Filled copy of ``y`` in the original units.
+
+        Raises:
+            RuntimeError: If :meth:`fit` has not been called.
         """
         if self.sc is None:
             raise RuntimeError("call fit() first")
@@ -278,6 +401,8 @@ class BiGRUImputer:
         out = fill_linear(y)
         cal = calendar_channels(ts)
         W, n = self.window, len(y)
+        if n < W:
+            return out
         jobs = []
         for a, b in gap_spans(np.isnan(y)):
             if a == 0 or b == n or (b - a) > W - 16:
@@ -288,12 +413,16 @@ class BiGRUImputer:
             chunk = jobs[k : k + 256]
             X = np.stack([_inputs(y[s : s + W], None if occ is None else occ[s : s + W], cal[s : s + W], self.sc) for _, _, s in chunk])
             pred = self._forward(torch.tensor(X, device=self.device)).cpu().numpy() * self.sc.y_std + self.sc.y_mean
-            for (a, b, s), p in zip(chunk, pred):
+            for (a, b, s), p in zip(chunk, pred, strict=True):
                 out[a:b] = p[a - s : b - s]
         return out
 
     def n_parameters(self) -> int:
-        """Number of trainable network weights."""
+        """Number of trainable network weights.
+
+        Returns:
+            The parameter count (the three physics parameters are not included).
+        """
         return sum(p.numel() for p in self.net.parameters())
 
     def flops_per_window(self) -> int:
@@ -301,6 +430,9 @@ class BiGRUImputer:
 
         A GRU layer costs ``3 * 2 * (h*i + h*h)`` multiply-adds per step and
         direction; the head adds ``2*(2h*h + h)``.
+
+        Returns:
+            FLOPs for one forward pass over one window.
         """
         h, W, flops, i = self.net.gru.hidden_size, self.window, 0, self.net.gru.input_size
         for layer in range(self.net.gru.num_layers):
@@ -315,10 +447,12 @@ class _ODEFunc(nn.Module):
     """MLP right-hand side ``f(C, N, tod)`` returning dC/dt in normalised units per hour."""
 
     def __init__(self, hidden: int = 64):
+        """Two hidden tanh layers (smooth, so RK4 sees a smooth vector field)."""
         super().__init__()
         self.net = nn.Sequential(nn.Linear(4, hidden), nn.Tanh(), nn.Linear(hidden, hidden), nn.Tanh(), nn.Linear(hidden, 1))
 
-    def forward(self, c, u):  # c: (B,), u: (B, 3) = [occ, tod_sin, tod_cos]
+    def forward(self, c, u):
+        """dC/dt for states ``c`` (B,) and inputs ``u`` (B, 3) = [occ, tod_sin, tod_cos]."""
         return self.net(torch.cat([c[:, None], u], dim=1)).squeeze(-1)
 
 
@@ -336,6 +470,12 @@ def rk4_rollout(func, c0, U, dt):
 
     Returns:
         States, shape ``(B, T)`` with ``out[:, 0] = c0``.
+
+    Example:
+        >>> decay = lambda c, u: -c  # dc/dt = -c
+        >>> out = rk4_rollout(decay, torch.ones(1), torch.zeros(1, 11, 1), dt=0.1)
+        >>> round(float(out[0, -1]), 5)  # e^-1
+        0.36788
     """
     cs = [c0]
     c = c0
@@ -360,9 +500,15 @@ class NeuralODE:
         dt_hours: Grid spacing.
         device: Torch device or None.
         seed: Random seed.
+
+    Attributes:
+        func: The learned right-hand side (:class:`torch.nn.Module`).
+        sc: Training :class:`Scaler` (None until :meth:`fit` is called).
+        log: :class:`TrainLog` of the last training run.
     """
 
     def __init__(self, horizon: int = 36, hidden: int = 64, dt_hours: float = 1 / 6, device=None, seed: int = 0):
+        """Create the (untrained) right-hand-side network."""
         set_seed(seed)
         self.h, self.dt = horizon, dt_hours
         self.device = get_device(device)
@@ -372,12 +518,32 @@ class NeuralODE:
         self.rng = np.random.default_rng(seed)
 
     def _U(self, occ, ts):
+        """Exogenous input channels ``[occ (normalised), tod_sin, tod_cos]``."""
         cal = calendar_channels(ts)[:, :2]
         o = (np.nan_to_num(occ) - self.sc.occ_mean) / self.sc.occ_std
         return np.column_stack([o, cal]).astype(np.float32)
 
     def fit(self, y, ts, occ, epochs: int = 30, steps_per_epoch: int = 100, batch: int = 128, lr: float = 3e-3) -> TrainLog:
-        """Fit by multiple shooting on random fully observed segments of length ``horizon``."""
+        """Fit by multiple shooting on random fully observed segments.
+
+        Each segment of length ``horizon`` is integrated from its own first
+        value, so errors cannot accumulate over more than one segment.
+
+        Args:
+            y: Training CO2 series (NaN allowed).
+            ts: Timestamps of ``y``.
+            occ: Occupancy on the same grid.
+            epochs: Number of epochs.
+            steps_per_epoch: Mini-batches per epoch.
+            batch: Segments per mini-batch.
+            lr: Adam learning rate.
+
+        Returns:
+            The :class:`TrainLog` (training loss only).
+
+        Raises:
+            ValueError: If no fully observed segment of length ``horizon`` exists.
+        """
         y = np.asarray(y, dtype=float)
         self.sc = Scaler.fit(y, occ)
         yn = (y - self.sc.y_mean) / self.sc.y_std
@@ -419,7 +585,12 @@ class NeuralODE:
 
         Returns:
             Filled copy (edge gaps use linear/hold).
+
+        Raises:
+            RuntimeError: If :meth:`fit` has not been called.
         """
+        if self.sc is None:
+            raise RuntimeError("call fit() first")
         y = np.asarray(y, dtype=float)
         out = fill_linear(y)
         U = self._U(occ, ts)

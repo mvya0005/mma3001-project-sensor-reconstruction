@@ -112,6 +112,18 @@ intensity and FLOPs. <code><a href="#measure">measure()</a></code> gives repeata
 peak Python memory; <code><a href="#profile_call">profile_call()</a></code> wraps <code>cProfile</code>;
 <code><a href="#flop_estimates">flop_estimates()</a></code> gives analytical operation counts used in the roofline
 analysis (<code><a href="#roofline">roofline()</a></code>).</p>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn"><a href="">sensorfill.profiling</a></span><span class="w"> </span><span class="kn">import</span> <span class="n">measure</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">m</span> <span class="o">=</span> <span class="n">measure</span><span class="p">(</span><span class="nb">sum</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1000</span><span class="p">),</span> <span class="n">repeats</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">m</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">median_s</span> <span class="o">&gt;=</span> <span class="mi">0</span>
+<span class="go">(499500, True)</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
                         <input id="mod-profiling-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
@@ -125,125 +137,171 @@ analysis (<code><a href="#roofline">roofline()</a></code>).</p>
 </span><span id="L-5"><a href="#L-5"><span class="linenos">  5</span></a><span class="sd">peak Python memory; :func:`profile_call` wraps :mod:`cProfile`;</span>
 </span><span id="L-6"><a href="#L-6"><span class="linenos">  6</span></a><span class="sd">:func:`flop_estimates` gives analytical operation counts used in the roofline</span>
 </span><span id="L-7"><a href="#L-7"><span class="linenos">  7</span></a><span class="sd">analysis (:func:`roofline`).</span>
-</span><span id="L-8"><a href="#L-8"><span class="linenos">  8</span></a><span class="sd">"""</span>
-</span><span id="L-9"><a href="#L-9"><span class="linenos">  9</span></a>
-</span><span id="L-10"><a href="#L-10"><span class="linenos"> 10</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
-</span><span id="L-11"><a href="#L-11"><span class="linenos"> 11</span></a>
-</span><span id="L-12"><a href="#L-12"><span class="linenos"> 12</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">cProfile</span>
-</span><span id="L-13"><a href="#L-13"><span class="linenos"> 13</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
-</span><span id="L-14"><a href="#L-14"><span class="linenos"> 14</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">pstats</span>
-</span><span id="L-15"><a href="#L-15"><span class="linenos"> 15</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
-</span><span id="L-16"><a href="#L-16"><span class="linenos"> 16</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">tracemalloc</span>
-</span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
-</span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
-</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a>
-</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-</span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a>
-</span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a>
-</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="nd">@dataclass</span>
-</span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Measurement</span><span class="p">:</span>
-</span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="w">    </span><span class="sd">"""Result of :func:`measure`.</span>
-</span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a>
-</span><span id="L-27"><a href="#L-27"><span class="linenos"> 27</span></a><span class="sd">    Attributes:</span>
-</span><span id="L-28"><a href="#L-28"><span class="linenos"> 28</span></a><span class="sd">        median_s: Median wall-clock time over the repeats [s].</span>
-</span><span id="L-29"><a href="#L-29"><span class="linenos"> 29</span></a><span class="sd">        min_s: Fastest repeat [s] (least affected by background load).</span>
-</span><span id="L-30"><a href="#L-30"><span class="linenos"> 30</span></a><span class="sd">        peak_mb: Peak memory allocated by Python during one call [MB]</span>
-</span><span id="L-31"><a href="#L-31"><span class="linenos"> 31</span></a><span class="sd">            (``tracemalloc``; excludes memory held by native libraries such as</span>
-</span><span id="L-32"><a href="#L-32"><span class="linenos"> 32</span></a><span class="sd">            BLAS work arrays or the GPU).</span>
-</span><span id="L-33"><a href="#L-33"><span class="linenos"> 33</span></a><span class="sd">        result: Return value of the last call.</span>
-</span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="sd">    """</span>
-</span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a>
-</span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a>    <span class="n">median_s</span><span class="p">:</span> <span class="nb">float</span>
-</span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a>    <span class="n">min_s</span><span class="p">:</span> <span class="nb">float</span>
-</span><span id="L-38"><a href="#L-38"><span class="linenos"> 38</span></a>    <span class="n">peak_mb</span><span class="p">:</span> <span class="nb">float</span>
-</span><span id="L-39"><a href="#L-39"><span class="linenos"> 39</span></a>    <span class="n">result</span><span class="p">:</span> <span class="nb">object</span>
-</span><span id="L-40"><a href="#L-40"><span class="linenos"> 40</span></a>
+</span><span id="L-8"><a href="#L-8"><span class="linenos">  8</span></a>
+</span><span id="L-9"><a href="#L-9"><span class="linenos">  9</span></a><span class="sd">Example:</span>
+</span><span id="L-10"><a href="#L-10"><span class="linenos"> 10</span></a><span class="sd">    &gt;&gt;&gt; from sensorfill.profiling import measure</span>
+</span><span id="L-11"><a href="#L-11"><span class="linenos"> 11</span></a><span class="sd">    &gt;&gt;&gt; m = measure(sum, range(1000), repeats=2)</span>
+</span><span id="L-12"><a href="#L-12"><span class="linenos"> 12</span></a><span class="sd">    &gt;&gt;&gt; m.result, m.median_s &gt;= 0</span>
+</span><span id="L-13"><a href="#L-13"><span class="linenos"> 13</span></a><span class="sd">    (499500, True)</span>
+</span><span id="L-14"><a href="#L-14"><span class="linenos"> 14</span></a><span class="sd">"""</span>
+</span><span id="L-15"><a href="#L-15"><span class="linenos"> 15</span></a>
+</span><span id="L-16"><a href="#L-16"><span class="linenos"> 16</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+</span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a>
+</span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">cProfile</span>
+</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">pstats</span>
+</span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+</span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">tracemalloc</span>
+</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+</span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+</span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a>
+</span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+</span><span id="L-27"><a href="#L-27"><span class="linenos"> 27</span></a>
+</span><span id="L-28"><a href="#L-28"><span class="linenos"> 28</span></a>
+</span><span id="L-29"><a href="#L-29"><span class="linenos"> 29</span></a><span class="nd">@dataclass</span>
+</span><span id="L-30"><a href="#L-30"><span class="linenos"> 30</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Measurement</span><span class="p">:</span>
+</span><span id="L-31"><a href="#L-31"><span class="linenos"> 31</span></a><span class="w">    </span><span class="sd">"""Result of :func:`measure`.</span>
+</span><span id="L-32"><a href="#L-32"><span class="linenos"> 32</span></a>
+</span><span id="L-33"><a href="#L-33"><span class="linenos"> 33</span></a><span class="sd">    Attributes:</span>
+</span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="sd">        median_s: Median wall-clock time over the repeats [s].</span>
+</span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a><span class="sd">        min_s: Fastest repeat [s] (least affected by background load).</span>
+</span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a><span class="sd">        peak_mb: Peak memory allocated by Python during one call [MB]</span>
+</span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a><span class="sd">            (``tracemalloc``; excludes memory held by native libraries such as</span>
+</span><span id="L-38"><a href="#L-38"><span class="linenos"> 38</span></a><span class="sd">            BLAS work arrays or the GPU).</span>
+</span><span id="L-39"><a href="#L-39"><span class="linenos"> 39</span></a><span class="sd">        result: Return value of the last call.</span>
+</span><span id="L-40"><a href="#L-40"><span class="linenos"> 40</span></a><span class="sd">    """</span>
 </span><span id="L-41"><a href="#L-41"><span class="linenos"> 41</span></a>
-</span><span id="L-42"><a href="#L-42"><span class="linenos"> 42</span></a><span class="k">def</span><span class="w"> </span><span class="nf">measure</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">repeats</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Measurement</span><span class="p">:</span>
-</span><span id="L-43"><a href="#L-43"><span class="linenos"> 43</span></a><span class="w">    </span><span class="sd">"""Time ``fn(*args, **kwargs)`` over ``repeats`` runs and record peak memory once."""</span>
-</span><span id="L-44"><a href="#L-44"><span class="linenos"> 44</span></a>    <span class="n">times</span> <span class="o">=</span> <span class="p">[]</span>
-</span><span id="L-45"><a href="#L-45"><span class="linenos"> 45</span></a>    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">repeats</span><span class="p">):</span>
-</span><span id="L-46"><a href="#L-46"><span class="linenos"> 46</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-</span><span id="L-47"><a href="#L-47"><span class="linenos"> 47</span></a>        <span class="n">res</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-</span><span id="L-48"><a href="#L-48"><span class="linenos"> 48</span></a>        <span class="n">times</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span>
-</span><span id="L-49"><a href="#L-49"><span class="linenos"> 49</span></a>    <span class="n">tracemalloc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-</span><span id="L-50"><a href="#L-50"><span class="linenos"> 50</span></a>    <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-</span><span id="L-51"><a href="#L-51"><span class="linenos"> 51</span></a>    <span class="n">_</span><span class="p">,</span> <span class="n">peak</span> <span class="o">=</span> <span class="n">tracemalloc</span><span class="o">.</span><span class="n">get_traced_memory</span><span class="p">()</span>
-</span><span id="L-52"><a href="#L-52"><span class="linenos"> 52</span></a>    <span class="n">tracemalloc</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
-</span><span id="L-53"><a href="#L-53"><span class="linenos"> 53</span></a>    <span class="k">return</span> <span class="n">Measurement</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">times</span><span class="p">)),</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">times</span><span class="p">)),</span> <span class="n">peak</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span> <span class="n">res</span><span class="p">)</span>
-</span><span id="L-54"><a href="#L-54"><span class="linenos"> 54</span></a>
-</span><span id="L-55"><a href="#L-55"><span class="linenos"> 55</span></a>
-</span><span id="L-56"><a href="#L-56"><span class="linenos"> 56</span></a><span class="k">def</span><span class="w"> </span><span class="nf">profile_call</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">top</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">15</span><span class="p">,</span> <span class="n">sort</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"tottime"</span><span class="p">,</span> <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-</span><span id="L-57"><a href="#L-57"><span class="linenos"> 57</span></a><span class="w">    </span><span class="sd">"""Run ``fn`` under cProfile and return the formatted top-``top`` table.</span>
-</span><span id="L-58"><a href="#L-58"><span class="linenos"> 58</span></a>
-</span><span id="L-59"><a href="#L-59"><span class="linenos"> 59</span></a><span class="sd">    Args:</span>
-</span><span id="L-60"><a href="#L-60"><span class="linenos"> 60</span></a><span class="sd">        fn: Function to profile; ``*args``/``**kwargs`` are passed to it.</span>
-</span><span id="L-61"><a href="#L-61"><span class="linenos"> 61</span></a><span class="sd">        top: Number of rows to show.</span>
-</span><span id="L-62"><a href="#L-62"><span class="linenos"> 62</span></a><span class="sd">        sort: pstats sort key (``"tottime"`` = time inside the function itself).</span>
-</span><span id="L-63"><a href="#L-63"><span class="linenos"> 63</span></a><span class="sd">        pattern: Optional regular expression; only matching rows are shown</span>
-</span><span id="L-64"><a href="#L-64"><span class="linenos"> 64</span></a><span class="sd">            (e.g. ``"sensorfill|scipy"`` hides Jupyter's own event-loop frames).</span>
-</span><span id="L-65"><a href="#L-65"><span class="linenos"> 65</span></a><span class="sd">    """</span>
-</span><span id="L-66"><a href="#L-66"><span class="linenos"> 66</span></a>    <span class="n">pr</span> <span class="o">=</span> <span class="n">cProfile</span><span class="o">.</span><span class="n">Profile</span><span class="p">()</span>
-</span><span id="L-67"><a href="#L-67"><span class="linenos"> 67</span></a>    <span class="n">pr</span><span class="o">.</span><span class="n">enable</span><span class="p">()</span>
-</span><span id="L-68"><a href="#L-68"><span class="linenos"> 68</span></a>    <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-</span><span id="L-69"><a href="#L-69"><span class="linenos"> 69</span></a>    <span class="n">pr</span><span class="o">.</span><span class="n">disable</span><span class="p">()</span>
-</span><span id="L-70"><a href="#L-70"><span class="linenos"> 70</span></a>    <span class="n">s</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
-</span><span id="L-71"><a href="#L-71"><span class="linenos"> 71</span></a>    <span class="n">st</span> <span class="o">=</span> <span class="n">pstats</span><span class="o">.</span><span class="n">Stats</span><span class="p">(</span><span class="n">pr</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">sort_stats</span><span class="p">(</span><span class="n">sort</span><span class="p">)</span>
-</span><span id="L-72"><a href="#L-72"><span class="linenos"> 72</span></a>    <span class="k">if</span> <span class="n">pattern</span><span class="p">:</span>
-</span><span id="L-73"><a href="#L-73"><span class="linenos"> 73</span></a>        <span class="n">st</span><span class="o">.</span><span class="n">print_stats</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">top</span><span class="p">)</span>
-</span><span id="L-74"><a href="#L-74"><span class="linenos"> 74</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="L-75"><a href="#L-75"><span class="linenos"> 75</span></a>        <span class="n">st</span><span class="o">.</span><span class="n">print_stats</span><span class="p">(</span><span class="n">top</span><span class="p">)</span>
-</span><span id="L-76"><a href="#L-76"><span class="linenos"> 76</span></a>    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+</span><span id="L-42"><a href="#L-42"><span class="linenos"> 42</span></a>    <span class="n">median_s</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="L-43"><a href="#L-43"><span class="linenos"> 43</span></a>    <span class="n">min_s</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="L-44"><a href="#L-44"><span class="linenos"> 44</span></a>    <span class="n">peak_mb</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="L-45"><a href="#L-45"><span class="linenos"> 45</span></a>    <span class="n">result</span><span class="p">:</span> <span class="nb">object</span>
+</span><span id="L-46"><a href="#L-46"><span class="linenos"> 46</span></a>
+</span><span id="L-47"><a href="#L-47"><span class="linenos"> 47</span></a>
+</span><span id="L-48"><a href="#L-48"><span class="linenos"> 48</span></a><span class="k">def</span><span class="w"> </span><span class="nf">measure</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">repeats</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Measurement</span><span class="p">:</span>
+</span><span id="L-49"><a href="#L-49"><span class="linenos"> 49</span></a><span class="w">    </span><span class="sd">"""Time ``fn(*args, **kwargs)`` over ``repeats`` runs and record peak memory once.</span>
+</span><span id="L-50"><a href="#L-50"><span class="linenos"> 50</span></a>
+</span><span id="L-51"><a href="#L-51"><span class="linenos"> 51</span></a><span class="sd">    Memory is measured in a separate, extra call because ``tracemalloc``</span>
+</span><span id="L-52"><a href="#L-52"><span class="linenos"> 52</span></a><span class="sd">    slows Python down and would distort the timings.</span>
+</span><span id="L-53"><a href="#L-53"><span class="linenos"> 53</span></a>
+</span><span id="L-54"><a href="#L-54"><span class="linenos"> 54</span></a><span class="sd">    Args:</span>
+</span><span id="L-55"><a href="#L-55"><span class="linenos"> 55</span></a><span class="sd">        fn: Function to measure.</span>
+</span><span id="L-56"><a href="#L-56"><span class="linenos"> 56</span></a><span class="sd">        *args: Positional arguments for ``fn``.</span>
+</span><span id="L-57"><a href="#L-57"><span class="linenos"> 57</span></a><span class="sd">        repeats: Number of timed calls.</span>
+</span><span id="L-58"><a href="#L-58"><span class="linenos"> 58</span></a><span class="sd">        **kwargs: Keyword arguments for ``fn``.</span>
+</span><span id="L-59"><a href="#L-59"><span class="linenos"> 59</span></a>
+</span><span id="L-60"><a href="#L-60"><span class="linenos"> 60</span></a><span class="sd">    Returns:</span>
+</span><span id="L-61"><a href="#L-61"><span class="linenos"> 61</span></a><span class="sd">        A :class:`Measurement`.</span>
+</span><span id="L-62"><a href="#L-62"><span class="linenos"> 62</span></a>
+</span><span id="L-63"><a href="#L-63"><span class="linenos"> 63</span></a><span class="sd">    Example:</span>
+</span><span id="L-64"><a href="#L-64"><span class="linenos"> 64</span></a><span class="sd">        &gt;&gt;&gt; measure(len, [1, 2, 3], repeats=1).result</span>
+</span><span id="L-65"><a href="#L-65"><span class="linenos"> 65</span></a><span class="sd">        3</span>
+</span><span id="L-66"><a href="#L-66"><span class="linenos"> 66</span></a><span class="sd">    """</span>
+</span><span id="L-67"><a href="#L-67"><span class="linenos"> 67</span></a>    <span class="n">times</span> <span class="o">=</span> <span class="p">[]</span>
+</span><span id="L-68"><a href="#L-68"><span class="linenos"> 68</span></a>    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">repeats</span><span class="p">):</span>
+</span><span id="L-69"><a href="#L-69"><span class="linenos"> 69</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+</span><span id="L-70"><a href="#L-70"><span class="linenos"> 70</span></a>        <span class="n">res</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span id="L-71"><a href="#L-71"><span class="linenos"> 71</span></a>        <span class="n">times</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span>
+</span><span id="L-72"><a href="#L-72"><span class="linenos"> 72</span></a>    <span class="n">tracemalloc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+</span><span id="L-73"><a href="#L-73"><span class="linenos"> 73</span></a>    <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span id="L-74"><a href="#L-74"><span class="linenos"> 74</span></a>    <span class="n">_</span><span class="p">,</span> <span class="n">peak</span> <span class="o">=</span> <span class="n">tracemalloc</span><span class="o">.</span><span class="n">get_traced_memory</span><span class="p">()</span>
+</span><span id="L-75"><a href="#L-75"><span class="linenos"> 75</span></a>    <span class="n">tracemalloc</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+</span><span id="L-76"><a href="#L-76"><span class="linenos"> 76</span></a>    <span class="k">return</span> <span class="n">Measurement</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">times</span><span class="p">)),</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">times</span><span class="p">)),</span> <span class="n">peak</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span> <span class="n">res</span><span class="p">)</span>
 </span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a>
 </span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a>
-</span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a><span class="k">def</span><span class="w"> </span><span class="nf">flop_estimates</span><span class="p">(</span><span class="n">n_missing</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">n_total</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">gap_len</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">k_newton</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">spline_window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">36</span><span class="p">,</span>
-</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a>                   <span class="n">svd_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">144</span><span class="p">),</span> <span class="n">svd_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">sor_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-</span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a><span class="w">    </span><span class="sd">"""Analytical FLOP and memory-traffic estimates per method.</span>
-</span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a>
-</span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a><span class="sd">    Counts are leading-order (constants matter less than scaling). Bytes</span>
-</span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a><span class="sd">    assume float64 values read/written once per pass (8 B each).</span>
-</span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a>
-</span><span id="L-86"><a href="#L-86"><span class="linenos"> 86</span></a><span class="sd">    Args:</span>
-</span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a><span class="sd">        n_missing: Number of missing points.</span>
-</span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a><span class="sd">        n_total: Series length.</span>
-</span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a><span class="sd">        gap_len: Typical gap length.</span>
-</span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a><span class="sd">        k_newton: Points per side for Newton.</span>
-</span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a><span class="sd">        spline_window: Local spline half-window.</span>
-</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="sd">        svd_shape: ``(days, steps_per_day)`` of the folded matrix.</span>
-</span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a><span class="sd">        svd_iters: Hard-impute iterations.</span>
-</span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a><span class="sd">        sor_iters: SOR sweeps.</span>
-</span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a>
-</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a><span class="sd">    Returns:</span>
-</span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a><span class="sd">        ``{method: {"flops": F, "bytes": B, "intensity": F/B}}``.</span>
+</span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a><span class="k">def</span><span class="w"> </span><span class="nf">profile_call</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">top</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">15</span><span class="p">,</span> <span class="n">sort</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"tottime"</span><span class="p">,</span> <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="w">    </span><span class="sd">"""Run ``fn`` under cProfile and return the formatted top-``top`` table.</span>
+</span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a>
+</span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a><span class="sd">    Args:</span>
+</span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a><span class="sd">        fn: Function to profile.</span>
+</span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a><span class="sd">        *args: Positional arguments for ``fn``.</span>
+</span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a><span class="sd">        top: Number of rows to show.</span>
+</span><span id="L-86"><a href="#L-86"><span class="linenos"> 86</span></a><span class="sd">        sort: pstats sort key (``"tottime"`` = time inside the function itself).</span>
+</span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a><span class="sd">        pattern: Optional regular expression; only matching rows are shown</span>
+</span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a><span class="sd">            (e.g. ``"sensorfill|scipy"`` hides Jupyter's own event-loop frames).</span>
+</span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a><span class="sd">        **kwargs: Keyword arguments for ``fn``.</span>
+</span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a>
+</span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a><span class="sd">    Returns:</span>
+</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="sd">        The pstats report as text.</span>
+</span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a>
+</span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a><span class="sd">    Example:</span>
+</span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a><span class="sd">        &gt;&gt;&gt; report = profile_call(sorted, list(range(100)), top=3)</span>
+</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a><span class="sd">        &gt;&gt;&gt; "function calls" in report</span>
+</span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a><span class="sd">        True</span>
 </span><span id="L-98"><a href="#L-98"><span class="linenos"> 98</span></a><span class="sd">    """</span>
-</span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a>    <span class="n">n_gaps</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_missing</span> <span class="o">//</span> <span class="nb">max</span><span class="p">(</span><span class="n">gap_len</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
-</span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a>    <span class="n">m</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">k_newton</span>
-</span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a>    <span class="n">est</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a>        <span class="s2">"linear"</span><span class="p">:</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">),</span>
-</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a>        <span class="s2">"newton"</span><span class="p">:</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.5</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="n">m</span><span class="p">)</span> <span class="o">+</span> <span class="n">n_missing</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">m</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">n_missing</span><span class="p">)),</span>
-</span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a>        <span class="s2">"spline"</span><span class="p">:</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">spline_window</span> <span class="o">+</span> <span class="n">gap_len</span><span class="p">)</span> <span class="o">+</span> <span class="n">n_missing</span> <span class="o">*</span> <span class="mi">15</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="n">n_gaps</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">spline_window</span> <span class="o">+</span> <span class="n">gap_len</span><span class="p">)),</span>
-</span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a>        <span class="s2">"svd"</span><span class="p">:</span> <span class="p">(</span><span class="n">svd_iters</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span> <span class="n">svd_iters</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
-</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a>        <span class="s2">"sor"</span><span class="p">:</span> <span class="p">(</span><span class="n">sor_iters</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">,</span> <span class="n">sor_iters</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">),</span>
-</span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a>    <span class="p">}</span>
-</span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a>    <span class="k">return</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="p">{</span><span class="s2">"flops"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">),</span> <span class="s2">"bytes"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">b</span><span class="p">),</span> <span class="s2">"intensity"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span> <span class="o">/</span> <span class="n">b</span><span class="p">)}</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="ow">in</span> <span class="n">est</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-</span><span id="L-109"><a href="#L-109"><span class="linenos">109</span></a>
+</span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a>    <span class="n">pr</span> <span class="o">=</span> <span class="n">cProfile</span><span class="o">.</span><span class="n">Profile</span><span class="p">()</span>
+</span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a>    <span class="n">pr</span><span class="o">.</span><span class="n">enable</span><span class="p">()</span>
+</span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a>    <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a>    <span class="n">pr</span><span class="o">.</span><span class="n">disable</span><span class="p">()</span>
+</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a>    <span class="n">s</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
+</span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a>    <span class="n">st</span> <span class="o">=</span> <span class="n">pstats</span><span class="o">.</span><span class="n">Stats</span><span class="p">(</span><span class="n">pr</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">sort_stats</span><span class="p">(</span><span class="n">sort</span><span class="p">)</span>
+</span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a>    <span class="k">if</span> <span class="n">pattern</span><span class="p">:</span>
+</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a>        <span class="n">st</span><span class="o">.</span><span class="n">print_stats</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">top</span><span class="p">)</span>
+</span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a>        <span class="n">st</span><span class="o">.</span><span class="n">print_stats</span><span class="p">(</span><span class="n">top</span><span class="p">)</span>
+</span><span id="L-109"><a href="#L-109"><span class="linenos">109</span></a>    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
 </span><span id="L-110"><a href="#L-110"><span class="linenos">110</span></a>
-</span><span id="L-111"><a href="#L-111"><span class="linenos">111</span></a><span class="k">def</span><span class="w"> </span><span class="nf">roofline</span><span class="p">(</span><span class="n">intensity</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">peak_gflops</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">bandwidth_gbs</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="L-112"><a href="#L-112"><span class="linenos">112</span></a><span class="w">    </span><span class="sd">"""Attainable performance ``min(peak, intensity * bandwidth)`` in GFLOP/s.</span>
-</span><span id="L-113"><a href="#L-113"><span class="linenos">113</span></a>
-</span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a><span class="sd">    Args:</span>
-</span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a><span class="sd">        intensity: Arithmetic intensity [FLOP/byte].</span>
-</span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a><span class="sd">        peak_gflops: Peak compute of the device [GFLOP/s].</span>
-</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a><span class="sd">        bandwidth_gbs: Memory bandwidth [GB/s].</span>
-</span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a><span class="sd">    """</span>
-</span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">peak_gflops</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">intensity</span><span class="p">)</span> <span class="o">*</span> <span class="n">bandwidth_gbs</span><span class="p">)</span>
-</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a>
-</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a>
-</span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a><span class="c1">#: Nominal specifications used for roofline plots (vendor data sheets).</span>
-</span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a><span class="n">DEVICES</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a>    <span class="s2">"Colab T4 GPU (FP32)"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"peak_gflops"</span><span class="p">:</span> <span class="mf">8100.0</span><span class="p">,</span> <span class="s2">"bandwidth_gbs"</span><span class="p">:</span> <span class="mf">320.0</span><span class="p">},</span>
-</span><span id="L-125"><a href="#L-125"><span class="linenos">125</span></a>    <span class="s2">"Colab CPU (2 vCPU, AVX2 FP64, approx.)"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"peak_gflops"</span><span class="p">:</span> <span class="mf">70.0</span><span class="p">,</span> <span class="s2">"bandwidth_gbs"</span><span class="p">:</span> <span class="mf">15.0</span><span class="p">},</span>
-</span><span id="L-126"><a href="#L-126"><span class="linenos">126</span></a><span class="p">}</span>
+</span><span id="L-111"><a href="#L-111"><span class="linenos">111</span></a>
+</span><span id="L-112"><a href="#L-112"><span class="linenos">112</span></a><span class="k">def</span><span class="w"> </span><span class="nf">flop_estimates</span><span class="p">(</span><span class="n">n_missing</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">n_total</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">gap_len</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">k_newton</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">spline_window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">36</span><span class="p">,</span>
+</span><span id="L-113"><a href="#L-113"><span class="linenos">113</span></a>                   <span class="n">svd_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">144</span><span class="p">),</span> <span class="n">svd_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">sor_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+</span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a><span class="w">    </span><span class="sd">"""Analytical FLOP and memory-traffic estimates per method.</span>
+</span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a>
+</span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a><span class="sd">    Counts are leading-order (constants matter less than scaling). Bytes</span>
+</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a><span class="sd">    assume float64 values read/written once per pass (8 B each).</span>
+</span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a>
+</span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a><span class="sd">    Args:</span>
+</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a><span class="sd">        n_missing: Number of missing points.</span>
+</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="sd">        n_total: Series length.</span>
+</span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a><span class="sd">        gap_len: Typical gap length.</span>
+</span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a><span class="sd">        k_newton: Points per side for Newton.</span>
+</span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a><span class="sd">        spline_window: Local spline half-window.</span>
+</span><span id="L-125"><a href="#L-125"><span class="linenos">125</span></a><span class="sd">        svd_shape: ``(days, steps_per_day)`` of the folded matrix.</span>
+</span><span id="L-126"><a href="#L-126"><span class="linenos">126</span></a><span class="sd">        svd_iters: Hard-impute iterations.</span>
+</span><span id="L-127"><a href="#L-127"><span class="linenos">127</span></a><span class="sd">        sor_iters: SOR sweeps.</span>
+</span><span id="L-128"><a href="#L-128"><span class="linenos">128</span></a>
+</span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a><span class="sd">    Returns:</span>
+</span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a><span class="sd">        ``{method: {"flops": F, "bytes": B, "intensity": F/B}}`` for</span>
+</span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a><span class="sd">        ``linear``, ``newton``, ``spline``, ``svd`` and ``sor``.</span>
+</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a>
+</span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a><span class="sd">    Example:</span>
+</span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a><span class="sd">        &gt;&gt;&gt; est = flop_estimates(n_missing=600, n_total=10_000, gap_len=6)</span>
+</span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a><span class="sd">        &gt;&gt;&gt; est["linear"]["intensity"]  # 3 flops per 24 bytes: memory bound</span>
+</span><span id="L-136"><a href="#L-136"><span class="linenos">136</span></a><span class="sd">        0.125</span>
+</span><span id="L-137"><a href="#L-137"><span class="linenos">137</span></a><span class="sd">    """</span>
+</span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a>    <span class="n">n_gaps</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_missing</span> <span class="o">//</span> <span class="nb">max</span><span class="p">(</span><span class="n">gap_len</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+</span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a>    <span class="n">m</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">k_newton</span>
+</span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a>    <span class="n">est</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a>        <span class="s2">"linear"</span><span class="p">:</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">),</span>
+</span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a>        <span class="s2">"newton"</span><span class="p">:</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.5</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="n">m</span><span class="p">)</span> <span class="o">+</span> <span class="n">n_missing</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">m</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">n_missing</span><span class="p">)),</span>
+</span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a>        <span class="s2">"spline"</span><span class="p">:</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">spline_window</span> <span class="o">+</span> <span class="n">gap_len</span><span class="p">)</span> <span class="o">+</span> <span class="n">n_missing</span> <span class="o">*</span> <span class="mi">15</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="n">n_gaps</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">spline_window</span> <span class="o">+</span> <span class="n">gap_len</span><span class="p">)),</span>
+</span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a>        <span class="s2">"svd"</span><span class="p">:</span> <span class="p">(</span><span class="n">svd_iters</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span> <span class="n">svd_iters</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+</span><span id="L-145"><a href="#L-145"><span class="linenos">145</span></a>        <span class="s2">"sor"</span><span class="p">:</span> <span class="p">(</span><span class="n">sor_iters</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">,</span> <span class="n">sor_iters</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">),</span>
+</span><span id="L-146"><a href="#L-146"><span class="linenos">146</span></a>    <span class="p">}</span>
+</span><span id="L-147"><a href="#L-147"><span class="linenos">147</span></a>    <span class="k">return</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="p">{</span><span class="s2">"flops"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">),</span> <span class="s2">"bytes"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">b</span><span class="p">),</span> <span class="s2">"intensity"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span> <span class="o">/</span> <span class="n">b</span><span class="p">)}</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="ow">in</span> <span class="n">est</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+</span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a>
+</span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a>
+</span><span id="L-150"><a href="#L-150"><span class="linenos">150</span></a><span class="k">def</span><span class="w"> </span><span class="nf">roofline</span><span class="p">(</span><span class="n">intensity</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">peak_gflops</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">bandwidth_gbs</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a><span class="w">    </span><span class="sd">"""Attainable performance ``min(peak, intensity * bandwidth)`` in GFLOP/s.</span>
+</span><span id="L-152"><a href="#L-152"><span class="linenos">152</span></a>
+</span><span id="L-153"><a href="#L-153"><span class="linenos">153</span></a><span class="sd">    Args:</span>
+</span><span id="L-154"><a href="#L-154"><span class="linenos">154</span></a><span class="sd">        intensity: Arithmetic intensity [FLOP/byte].</span>
+</span><span id="L-155"><a href="#L-155"><span class="linenos">155</span></a><span class="sd">        peak_gflops: Peak compute of the device [GFLOP/s].</span>
+</span><span id="L-156"><a href="#L-156"><span class="linenos">156</span></a><span class="sd">        bandwidth_gbs: Memory bandwidth [GB/s].</span>
+</span><span id="L-157"><a href="#L-157"><span class="linenos">157</span></a>
+</span><span id="L-158"><a href="#L-158"><span class="linenos">158</span></a><span class="sd">    Returns:</span>
+</span><span id="L-159"><a href="#L-159"><span class="linenos">159</span></a><span class="sd">        Attainable GFLOP/s for each intensity.</span>
+</span><span id="L-160"><a href="#L-160"><span class="linenos">160</span></a>
+</span><span id="L-161"><a href="#L-161"><span class="linenos">161</span></a><span class="sd">    Example:</span>
+</span><span id="L-162"><a href="#L-162"><span class="linenos">162</span></a><span class="sd">        &gt;&gt;&gt; roofline([0.1, 100.0], peak_gflops=70.0, bandwidth_gbs=15.0)</span>
+</span><span id="L-163"><a href="#L-163"><span class="linenos">163</span></a><span class="sd">        array([ 1.5, 70. ])</span>
+</span><span id="L-164"><a href="#L-164"><span class="linenos">164</span></a><span class="sd">    """</span>
+</span><span id="L-165"><a href="#L-165"><span class="linenos">165</span></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">peak_gflops</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">intensity</span><span class="p">)</span> <span class="o">*</span> <span class="n">bandwidth_gbs</span><span class="p">)</span>
+</span><span id="L-166"><a href="#L-166"><span class="linenos">166</span></a>
+</span><span id="L-167"><a href="#L-167"><span class="linenos">167</span></a>
+</span><span id="L-168"><a href="#L-168"><span class="linenos">168</span></a><span class="c1">#: Nominal specifications used for roofline plots (vendor data sheets).</span>
+</span><span id="L-169"><a href="#L-169"><span class="linenos">169</span></a><span class="n">DEVICES</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="L-170"><a href="#L-170"><span class="linenos">170</span></a>    <span class="s2">"Colab T4 GPU (FP32)"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"peak_gflops"</span><span class="p">:</span> <span class="mf">8100.0</span><span class="p">,</span> <span class="s2">"bandwidth_gbs"</span><span class="p">:</span> <span class="mf">320.0</span><span class="p">},</span>
+</span><span id="L-171"><a href="#L-171"><span class="linenos">171</span></a>    <span class="s2">"Colab CPU (2 vCPU, AVX2 FP64, approx.)"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"peak_gflops"</span><span class="p">:</span> <span class="mf">70.0</span><span class="p">,</span> <span class="s2">"bandwidth_gbs"</span><span class="p">:</span> <span class="mf">15.0</span><span class="p">},</span>
+</span><span id="L-172"><a href="#L-172"><span class="linenos">172</span></a><span class="p">}</span>
 </span></pre></div>
 
 
@@ -260,23 +318,23 @@ analysis (<code><a href="#roofline">roofline()</a></code>).</p>
 
     </div>
     <a class="headerlink" href="#Measurement"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="Measurement-24"><a href="#Measurement-24"><span class="linenos">24</span></a><span class="nd">@dataclass</span>
-</span><span id="Measurement-25"><a href="#Measurement-25"><span class="linenos">25</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Measurement</span><span class="p">:</span>
-</span><span id="Measurement-26"><a href="#Measurement-26"><span class="linenos">26</span></a><span class="w">    </span><span class="sd">"""Result of :func:`measure`.</span>
-</span><span id="Measurement-27"><a href="#Measurement-27"><span class="linenos">27</span></a>
-</span><span id="Measurement-28"><a href="#Measurement-28"><span class="linenos">28</span></a><span class="sd">    Attributes:</span>
-</span><span id="Measurement-29"><a href="#Measurement-29"><span class="linenos">29</span></a><span class="sd">        median_s: Median wall-clock time over the repeats [s].</span>
-</span><span id="Measurement-30"><a href="#Measurement-30"><span class="linenos">30</span></a><span class="sd">        min_s: Fastest repeat [s] (least affected by background load).</span>
-</span><span id="Measurement-31"><a href="#Measurement-31"><span class="linenos">31</span></a><span class="sd">        peak_mb: Peak memory allocated by Python during one call [MB]</span>
-</span><span id="Measurement-32"><a href="#Measurement-32"><span class="linenos">32</span></a><span class="sd">            (``tracemalloc``; excludes memory held by native libraries such as</span>
-</span><span id="Measurement-33"><a href="#Measurement-33"><span class="linenos">33</span></a><span class="sd">            BLAS work arrays or the GPU).</span>
-</span><span id="Measurement-34"><a href="#Measurement-34"><span class="linenos">34</span></a><span class="sd">        result: Return value of the last call.</span>
-</span><span id="Measurement-35"><a href="#Measurement-35"><span class="linenos">35</span></a><span class="sd">    """</span>
-</span><span id="Measurement-36"><a href="#Measurement-36"><span class="linenos">36</span></a>
-</span><span id="Measurement-37"><a href="#Measurement-37"><span class="linenos">37</span></a>    <span class="n">median_s</span><span class="p">:</span> <span class="nb">float</span>
-</span><span id="Measurement-38"><a href="#Measurement-38"><span class="linenos">38</span></a>    <span class="n">min_s</span><span class="p">:</span> <span class="nb">float</span>
-</span><span id="Measurement-39"><a href="#Measurement-39"><span class="linenos">39</span></a>    <span class="n">peak_mb</span><span class="p">:</span> <span class="nb">float</span>
-</span><span id="Measurement-40"><a href="#Measurement-40"><span class="linenos">40</span></a>    <span class="n">result</span><span class="p">:</span> <span class="nb">object</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Measurement-30"><a href="#Measurement-30"><span class="linenos">30</span></a><span class="nd">@dataclass</span>
+</span><span id="Measurement-31"><a href="#Measurement-31"><span class="linenos">31</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Measurement</span><span class="p">:</span>
+</span><span id="Measurement-32"><a href="#Measurement-32"><span class="linenos">32</span></a><span class="w">    </span><span class="sd">"""Result of :func:`measure`.</span>
+</span><span id="Measurement-33"><a href="#Measurement-33"><span class="linenos">33</span></a>
+</span><span id="Measurement-34"><a href="#Measurement-34"><span class="linenos">34</span></a><span class="sd">    Attributes:</span>
+</span><span id="Measurement-35"><a href="#Measurement-35"><span class="linenos">35</span></a><span class="sd">        median_s: Median wall-clock time over the repeats [s].</span>
+</span><span id="Measurement-36"><a href="#Measurement-36"><span class="linenos">36</span></a><span class="sd">        min_s: Fastest repeat [s] (least affected by background load).</span>
+</span><span id="Measurement-37"><a href="#Measurement-37"><span class="linenos">37</span></a><span class="sd">        peak_mb: Peak memory allocated by Python during one call [MB]</span>
+</span><span id="Measurement-38"><a href="#Measurement-38"><span class="linenos">38</span></a><span class="sd">            (``tracemalloc``; excludes memory held by native libraries such as</span>
+</span><span id="Measurement-39"><a href="#Measurement-39"><span class="linenos">39</span></a><span class="sd">            BLAS work arrays or the GPU).</span>
+</span><span id="Measurement-40"><a href="#Measurement-40"><span class="linenos">40</span></a><span class="sd">        result: Return value of the last call.</span>
+</span><span id="Measurement-41"><a href="#Measurement-41"><span class="linenos">41</span></a><span class="sd">    """</span>
+</span><span id="Measurement-42"><a href="#Measurement-42"><span class="linenos">42</span></a>
+</span><span id="Measurement-43"><a href="#Measurement-43"><span class="linenos">43</span></a>    <span class="n">median_s</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="Measurement-44"><a href="#Measurement-44"><span class="linenos">44</span></a>    <span class="n">min_s</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="Measurement-45"><a href="#Measurement-45"><span class="linenos">45</span></a>    <span class="n">peak_mb</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="Measurement-46"><a href="#Measurement-46"><span class="linenos">46</span></a>    <span class="n">result</span><span class="p">:</span> <span class="nb">object</span>
 </span></pre></div>
 
 
@@ -363,22 +421,67 @@ BLAS work arrays or the GPU).</li>
 
     </div>
     <a class="headerlink" href="#measure"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="measure-43"><a href="#measure-43"><span class="linenos">43</span></a><span class="k">def</span><span class="w"> </span><span class="nf">measure</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">repeats</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Measurement</span><span class="p">:</span>
-</span><span id="measure-44"><a href="#measure-44"><span class="linenos">44</span></a><span class="w">    </span><span class="sd">"""Time ``fn(*args, **kwargs)`` over ``repeats`` runs and record peak memory once."""</span>
-</span><span id="measure-45"><a href="#measure-45"><span class="linenos">45</span></a>    <span class="n">times</span> <span class="o">=</span> <span class="p">[]</span>
-</span><span id="measure-46"><a href="#measure-46"><span class="linenos">46</span></a>    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">repeats</span><span class="p">):</span>
-</span><span id="measure-47"><a href="#measure-47"><span class="linenos">47</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-</span><span id="measure-48"><a href="#measure-48"><span class="linenos">48</span></a>        <span class="n">res</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-</span><span id="measure-49"><a href="#measure-49"><span class="linenos">49</span></a>        <span class="n">times</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span>
-</span><span id="measure-50"><a href="#measure-50"><span class="linenos">50</span></a>    <span class="n">tracemalloc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-</span><span id="measure-51"><a href="#measure-51"><span class="linenos">51</span></a>    <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-</span><span id="measure-52"><a href="#measure-52"><span class="linenos">52</span></a>    <span class="n">_</span><span class="p">,</span> <span class="n">peak</span> <span class="o">=</span> <span class="n">tracemalloc</span><span class="o">.</span><span class="n">get_traced_memory</span><span class="p">()</span>
-</span><span id="measure-53"><a href="#measure-53"><span class="linenos">53</span></a>    <span class="n">tracemalloc</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
-</span><span id="measure-54"><a href="#measure-54"><span class="linenos">54</span></a>    <span class="k">return</span> <span class="n">Measurement</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">times</span><span class="p">)),</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">times</span><span class="p">)),</span> <span class="n">peak</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span> <span class="n">res</span><span class="p">)</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="measure-49"><a href="#measure-49"><span class="linenos">49</span></a><span class="k">def</span><span class="w"> </span><span class="nf">measure</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">repeats</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Measurement</span><span class="p">:</span>
+</span><span id="measure-50"><a href="#measure-50"><span class="linenos">50</span></a><span class="w">    </span><span class="sd">"""Time ``fn(*args, **kwargs)`` over ``repeats`` runs and record peak memory once.</span>
+</span><span id="measure-51"><a href="#measure-51"><span class="linenos">51</span></a>
+</span><span id="measure-52"><a href="#measure-52"><span class="linenos">52</span></a><span class="sd">    Memory is measured in a separate, extra call because ``tracemalloc``</span>
+</span><span id="measure-53"><a href="#measure-53"><span class="linenos">53</span></a><span class="sd">    slows Python down and would distort the timings.</span>
+</span><span id="measure-54"><a href="#measure-54"><span class="linenos">54</span></a>
+</span><span id="measure-55"><a href="#measure-55"><span class="linenos">55</span></a><span class="sd">    Args:</span>
+</span><span id="measure-56"><a href="#measure-56"><span class="linenos">56</span></a><span class="sd">        fn: Function to measure.</span>
+</span><span id="measure-57"><a href="#measure-57"><span class="linenos">57</span></a><span class="sd">        *args: Positional arguments for ``fn``.</span>
+</span><span id="measure-58"><a href="#measure-58"><span class="linenos">58</span></a><span class="sd">        repeats: Number of timed calls.</span>
+</span><span id="measure-59"><a href="#measure-59"><span class="linenos">59</span></a><span class="sd">        **kwargs: Keyword arguments for ``fn``.</span>
+</span><span id="measure-60"><a href="#measure-60"><span class="linenos">60</span></a>
+</span><span id="measure-61"><a href="#measure-61"><span class="linenos">61</span></a><span class="sd">    Returns:</span>
+</span><span id="measure-62"><a href="#measure-62"><span class="linenos">62</span></a><span class="sd">        A :class:`Measurement`.</span>
+</span><span id="measure-63"><a href="#measure-63"><span class="linenos">63</span></a>
+</span><span id="measure-64"><a href="#measure-64"><span class="linenos">64</span></a><span class="sd">    Example:</span>
+</span><span id="measure-65"><a href="#measure-65"><span class="linenos">65</span></a><span class="sd">        &gt;&gt;&gt; measure(len, [1, 2, 3], repeats=1).result</span>
+</span><span id="measure-66"><a href="#measure-66"><span class="linenos">66</span></a><span class="sd">        3</span>
+</span><span id="measure-67"><a href="#measure-67"><span class="linenos">67</span></a><span class="sd">    """</span>
+</span><span id="measure-68"><a href="#measure-68"><span class="linenos">68</span></a>    <span class="n">times</span> <span class="o">=</span> <span class="p">[]</span>
+</span><span id="measure-69"><a href="#measure-69"><span class="linenos">69</span></a>    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">repeats</span><span class="p">):</span>
+</span><span id="measure-70"><a href="#measure-70"><span class="linenos">70</span></a>        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+</span><span id="measure-71"><a href="#measure-71"><span class="linenos">71</span></a>        <span class="n">res</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span id="measure-72"><a href="#measure-72"><span class="linenos">72</span></a>        <span class="n">times</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span>
+</span><span id="measure-73"><a href="#measure-73"><span class="linenos">73</span></a>    <span class="n">tracemalloc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+</span><span id="measure-74"><a href="#measure-74"><span class="linenos">74</span></a>    <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span id="measure-75"><a href="#measure-75"><span class="linenos">75</span></a>    <span class="n">_</span><span class="p">,</span> <span class="n">peak</span> <span class="o">=</span> <span class="n">tracemalloc</span><span class="o">.</span><span class="n">get_traced_memory</span><span class="p">()</span>
+</span><span id="measure-76"><a href="#measure-76"><span class="linenos">76</span></a>    <span class="n">tracemalloc</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+</span><span id="measure-77"><a href="#measure-77"><span class="linenos">77</span></a>    <span class="k">return</span> <span class="n">Measurement</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">times</span><span class="p">)),</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">times</span><span class="p">)),</span> <span class="n">peak</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">,</span> <span class="n">res</span><span class="p">)</span>
 </span></pre></div>
 
 
             <div class="docstring"><p>Time <code>fn(*args, **kwargs)</code> over <code>repeats</code> runs and record peak memory once.</p>
+
+<p>Memory is measured in a separate, extra call because <code>tracemalloc</code>
+slows Python down and would distort the timings.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>fn:</strong>  Function to measure.</li>
+<li>*<strong>args:</strong>  Positional arguments for <code>fn</code>.</li>
+<li><strong>repeats:</strong>  Number of timed calls.</li>
+<li>**<strong>kwargs:</strong>  Keyword arguments for <code>fn</code>.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>A <code><a href="#Measurement">Measurement</a></code>.</p>
+</blockquote>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">measure</span><span class="p">(</span><span class="nb">len</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">repeats</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">result</span>
+<span class="go">3</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
 
@@ -394,27 +497,37 @@ BLAS work arrays or the GPU).</li>
 
     </div>
     <a class="headerlink" href="#profile_call"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="profile_call-57"><a href="#profile_call-57"><span class="linenos">57</span></a><span class="k">def</span><span class="w"> </span><span class="nf">profile_call</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">top</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">15</span><span class="p">,</span> <span class="n">sort</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"tottime"</span><span class="p">,</span> <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-</span><span id="profile_call-58"><a href="#profile_call-58"><span class="linenos">58</span></a><span class="w">    </span><span class="sd">"""Run ``fn`` under cProfile and return the formatted top-``top`` table.</span>
-</span><span id="profile_call-59"><a href="#profile_call-59"><span class="linenos">59</span></a>
-</span><span id="profile_call-60"><a href="#profile_call-60"><span class="linenos">60</span></a><span class="sd">    Args:</span>
-</span><span id="profile_call-61"><a href="#profile_call-61"><span class="linenos">61</span></a><span class="sd">        fn: Function to profile; ``*args``/``**kwargs`` are passed to it.</span>
-</span><span id="profile_call-62"><a href="#profile_call-62"><span class="linenos">62</span></a><span class="sd">        top: Number of rows to show.</span>
-</span><span id="profile_call-63"><a href="#profile_call-63"><span class="linenos">63</span></a><span class="sd">        sort: pstats sort key (``"tottime"`` = time inside the function itself).</span>
-</span><span id="profile_call-64"><a href="#profile_call-64"><span class="linenos">64</span></a><span class="sd">        pattern: Optional regular expression; only matching rows are shown</span>
-</span><span id="profile_call-65"><a href="#profile_call-65"><span class="linenos">65</span></a><span class="sd">            (e.g. ``"sensorfill|scipy"`` hides Jupyter's own event-loop frames).</span>
-</span><span id="profile_call-66"><a href="#profile_call-66"><span class="linenos">66</span></a><span class="sd">    """</span>
-</span><span id="profile_call-67"><a href="#profile_call-67"><span class="linenos">67</span></a>    <span class="n">pr</span> <span class="o">=</span> <span class="n">cProfile</span><span class="o">.</span><span class="n">Profile</span><span class="p">()</span>
-</span><span id="profile_call-68"><a href="#profile_call-68"><span class="linenos">68</span></a>    <span class="n">pr</span><span class="o">.</span><span class="n">enable</span><span class="p">()</span>
-</span><span id="profile_call-69"><a href="#profile_call-69"><span class="linenos">69</span></a>    <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-</span><span id="profile_call-70"><a href="#profile_call-70"><span class="linenos">70</span></a>    <span class="n">pr</span><span class="o">.</span><span class="n">disable</span><span class="p">()</span>
-</span><span id="profile_call-71"><a href="#profile_call-71"><span class="linenos">71</span></a>    <span class="n">s</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
-</span><span id="profile_call-72"><a href="#profile_call-72"><span class="linenos">72</span></a>    <span class="n">st</span> <span class="o">=</span> <span class="n">pstats</span><span class="o">.</span><span class="n">Stats</span><span class="p">(</span><span class="n">pr</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">sort_stats</span><span class="p">(</span><span class="n">sort</span><span class="p">)</span>
-</span><span id="profile_call-73"><a href="#profile_call-73"><span class="linenos">73</span></a>    <span class="k">if</span> <span class="n">pattern</span><span class="p">:</span>
-</span><span id="profile_call-74"><a href="#profile_call-74"><span class="linenos">74</span></a>        <span class="n">st</span><span class="o">.</span><span class="n">print_stats</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">top</span><span class="p">)</span>
-</span><span id="profile_call-75"><a href="#profile_call-75"><span class="linenos">75</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="profile_call-76"><a href="#profile_call-76"><span class="linenos">76</span></a>        <span class="n">st</span><span class="o">.</span><span class="n">print_stats</span><span class="p">(</span><span class="n">top</span><span class="p">)</span>
-</span><span id="profile_call-77"><a href="#profile_call-77"><span class="linenos">77</span></a>    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="profile_call-80"><a href="#profile_call-80"><span class="linenos"> 80</span></a><span class="k">def</span><span class="w"> </span><span class="nf">profile_call</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">top</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">15</span><span class="p">,</span> <span class="n">sort</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"tottime"</span><span class="p">,</span> <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+</span><span id="profile_call-81"><a href="#profile_call-81"><span class="linenos"> 81</span></a><span class="w">    </span><span class="sd">"""Run ``fn`` under cProfile and return the formatted top-``top`` table.</span>
+</span><span id="profile_call-82"><a href="#profile_call-82"><span class="linenos"> 82</span></a>
+</span><span id="profile_call-83"><a href="#profile_call-83"><span class="linenos"> 83</span></a><span class="sd">    Args:</span>
+</span><span id="profile_call-84"><a href="#profile_call-84"><span class="linenos"> 84</span></a><span class="sd">        fn: Function to profile.</span>
+</span><span id="profile_call-85"><a href="#profile_call-85"><span class="linenos"> 85</span></a><span class="sd">        *args: Positional arguments for ``fn``.</span>
+</span><span id="profile_call-86"><a href="#profile_call-86"><span class="linenos"> 86</span></a><span class="sd">        top: Number of rows to show.</span>
+</span><span id="profile_call-87"><a href="#profile_call-87"><span class="linenos"> 87</span></a><span class="sd">        sort: pstats sort key (``"tottime"`` = time inside the function itself).</span>
+</span><span id="profile_call-88"><a href="#profile_call-88"><span class="linenos"> 88</span></a><span class="sd">        pattern: Optional regular expression; only matching rows are shown</span>
+</span><span id="profile_call-89"><a href="#profile_call-89"><span class="linenos"> 89</span></a><span class="sd">            (e.g. ``"sensorfill|scipy"`` hides Jupyter's own event-loop frames).</span>
+</span><span id="profile_call-90"><a href="#profile_call-90"><span class="linenos"> 90</span></a><span class="sd">        **kwargs: Keyword arguments for ``fn``.</span>
+</span><span id="profile_call-91"><a href="#profile_call-91"><span class="linenos"> 91</span></a>
+</span><span id="profile_call-92"><a href="#profile_call-92"><span class="linenos"> 92</span></a><span class="sd">    Returns:</span>
+</span><span id="profile_call-93"><a href="#profile_call-93"><span class="linenos"> 93</span></a><span class="sd">        The pstats report as text.</span>
+</span><span id="profile_call-94"><a href="#profile_call-94"><span class="linenos"> 94</span></a>
+</span><span id="profile_call-95"><a href="#profile_call-95"><span class="linenos"> 95</span></a><span class="sd">    Example:</span>
+</span><span id="profile_call-96"><a href="#profile_call-96"><span class="linenos"> 96</span></a><span class="sd">        &gt;&gt;&gt; report = profile_call(sorted, list(range(100)), top=3)</span>
+</span><span id="profile_call-97"><a href="#profile_call-97"><span class="linenos"> 97</span></a><span class="sd">        &gt;&gt;&gt; "function calls" in report</span>
+</span><span id="profile_call-98"><a href="#profile_call-98"><span class="linenos"> 98</span></a><span class="sd">        True</span>
+</span><span id="profile_call-99"><a href="#profile_call-99"><span class="linenos"> 99</span></a><span class="sd">    """</span>
+</span><span id="profile_call-100"><a href="#profile_call-100"><span class="linenos">100</span></a>    <span class="n">pr</span> <span class="o">=</span> <span class="n">cProfile</span><span class="o">.</span><span class="n">Profile</span><span class="p">()</span>
+</span><span id="profile_call-101"><a href="#profile_call-101"><span class="linenos">101</span></a>    <span class="n">pr</span><span class="o">.</span><span class="n">enable</span><span class="p">()</span>
+</span><span id="profile_call-102"><a href="#profile_call-102"><span class="linenos">102</span></a>    <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span id="profile_call-103"><a href="#profile_call-103"><span class="linenos">103</span></a>    <span class="n">pr</span><span class="o">.</span><span class="n">disable</span><span class="p">()</span>
+</span><span id="profile_call-104"><a href="#profile_call-104"><span class="linenos">104</span></a>    <span class="n">s</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
+</span><span id="profile_call-105"><a href="#profile_call-105"><span class="linenos">105</span></a>    <span class="n">st</span> <span class="o">=</span> <span class="n">pstats</span><span class="o">.</span><span class="n">Stats</span><span class="p">(</span><span class="n">pr</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">sort_stats</span><span class="p">(</span><span class="n">sort</span><span class="p">)</span>
+</span><span id="profile_call-106"><a href="#profile_call-106"><span class="linenos">106</span></a>    <span class="k">if</span> <span class="n">pattern</span><span class="p">:</span>
+</span><span id="profile_call-107"><a href="#profile_call-107"><span class="linenos">107</span></a>        <span class="n">st</span><span class="o">.</span><span class="n">print_stats</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">top</span><span class="p">)</span>
+</span><span id="profile_call-108"><a href="#profile_call-108"><span class="linenos">108</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="profile_call-109"><a href="#profile_call-109"><span class="linenos">109</span></a>        <span class="n">st</span><span class="o">.</span><span class="n">print_stats</span><span class="p">(</span><span class="n">top</span><span class="p">)</span>
+</span><span id="profile_call-110"><a href="#profile_call-110"><span class="linenos">110</span></a>    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
 </span></pre></div>
 
 
@@ -423,12 +536,31 @@ BLAS work arrays or the GPU).</li>
 <h6 id="arguments">Arguments:</h6>
 
 <ul>
-<li><strong>fn:</strong>  Function to profile; <code>*args</code>/<code>**kwargs</code> are passed to it.</li>
+<li><strong>fn:</strong>  Function to profile.</li>
+<li>*<strong>args:</strong>  Positional arguments for <code>fn</code>.</li>
 <li><strong>top:</strong>  Number of rows to show.</li>
 <li><strong>sort:</strong>  pstats sort key (<code>"tottime"</code> = time inside the function itself).</li>
 <li><strong>pattern:</strong>  Optional regular expression; only matching rows are shown
 (e.g. <code>"sensorfill|scipy"</code> hides Jupyter's own event-loop frames).</li>
+<li>**<strong>kwargs:</strong>  Keyword arguments for <code>fn</code>.</li>
 </ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>The pstats report as text.</p>
+</blockquote>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">report</span> <span class="o">=</span> <span class="n">profile_call</span><span class="p">(</span><span class="nb">sorted</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">)),</span> <span class="n">top</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="s2">"function calls"</span> <span class="ow">in</span> <span class="n">report</span>
+<span class="go">True</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
 
@@ -444,36 +576,42 @@ BLAS work arrays or the GPU).</li>
 
     </div>
     <a class="headerlink" href="#flop_estimates"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="flop_estimates-80"><a href="#flop_estimates-80"><span class="linenos"> 80</span></a><span class="k">def</span><span class="w"> </span><span class="nf">flop_estimates</span><span class="p">(</span><span class="n">n_missing</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">n_total</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">gap_len</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">k_newton</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">spline_window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">36</span><span class="p">,</span>
-</span><span id="flop_estimates-81"><a href="#flop_estimates-81"><span class="linenos"> 81</span></a>                   <span class="n">svd_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">144</span><span class="p">),</span> <span class="n">svd_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">sor_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-</span><span id="flop_estimates-82"><a href="#flop_estimates-82"><span class="linenos"> 82</span></a><span class="w">    </span><span class="sd">"""Analytical FLOP and memory-traffic estimates per method.</span>
-</span><span id="flop_estimates-83"><a href="#flop_estimates-83"><span class="linenos"> 83</span></a>
-</span><span id="flop_estimates-84"><a href="#flop_estimates-84"><span class="linenos"> 84</span></a><span class="sd">    Counts are leading-order (constants matter less than scaling). Bytes</span>
-</span><span id="flop_estimates-85"><a href="#flop_estimates-85"><span class="linenos"> 85</span></a><span class="sd">    assume float64 values read/written once per pass (8 B each).</span>
-</span><span id="flop_estimates-86"><a href="#flop_estimates-86"><span class="linenos"> 86</span></a>
-</span><span id="flop_estimates-87"><a href="#flop_estimates-87"><span class="linenos"> 87</span></a><span class="sd">    Args:</span>
-</span><span id="flop_estimates-88"><a href="#flop_estimates-88"><span class="linenos"> 88</span></a><span class="sd">        n_missing: Number of missing points.</span>
-</span><span id="flop_estimates-89"><a href="#flop_estimates-89"><span class="linenos"> 89</span></a><span class="sd">        n_total: Series length.</span>
-</span><span id="flop_estimates-90"><a href="#flop_estimates-90"><span class="linenos"> 90</span></a><span class="sd">        gap_len: Typical gap length.</span>
-</span><span id="flop_estimates-91"><a href="#flop_estimates-91"><span class="linenos"> 91</span></a><span class="sd">        k_newton: Points per side for Newton.</span>
-</span><span id="flop_estimates-92"><a href="#flop_estimates-92"><span class="linenos"> 92</span></a><span class="sd">        spline_window: Local spline half-window.</span>
-</span><span id="flop_estimates-93"><a href="#flop_estimates-93"><span class="linenos"> 93</span></a><span class="sd">        svd_shape: ``(days, steps_per_day)`` of the folded matrix.</span>
-</span><span id="flop_estimates-94"><a href="#flop_estimates-94"><span class="linenos"> 94</span></a><span class="sd">        svd_iters: Hard-impute iterations.</span>
-</span><span id="flop_estimates-95"><a href="#flop_estimates-95"><span class="linenos"> 95</span></a><span class="sd">        sor_iters: SOR sweeps.</span>
-</span><span id="flop_estimates-96"><a href="#flop_estimates-96"><span class="linenos"> 96</span></a>
-</span><span id="flop_estimates-97"><a href="#flop_estimates-97"><span class="linenos"> 97</span></a><span class="sd">    Returns:</span>
-</span><span id="flop_estimates-98"><a href="#flop_estimates-98"><span class="linenos"> 98</span></a><span class="sd">        ``{method: {"flops": F, "bytes": B, "intensity": F/B}}``.</span>
-</span><span id="flop_estimates-99"><a href="#flop_estimates-99"><span class="linenos"> 99</span></a><span class="sd">    """</span>
-</span><span id="flop_estimates-100"><a href="#flop_estimates-100"><span class="linenos">100</span></a>    <span class="n">n_gaps</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_missing</span> <span class="o">//</span> <span class="nb">max</span><span class="p">(</span><span class="n">gap_len</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
-</span><span id="flop_estimates-101"><a href="#flop_estimates-101"><span class="linenos">101</span></a>    <span class="n">m</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">k_newton</span>
-</span><span id="flop_estimates-102"><a href="#flop_estimates-102"><span class="linenos">102</span></a>    <span class="n">est</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="flop_estimates-103"><a href="#flop_estimates-103"><span class="linenos">103</span></a>        <span class="s2">"linear"</span><span class="p">:</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">),</span>
-</span><span id="flop_estimates-104"><a href="#flop_estimates-104"><span class="linenos">104</span></a>        <span class="s2">"newton"</span><span class="p">:</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.5</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="n">m</span><span class="p">)</span> <span class="o">+</span> <span class="n">n_missing</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">m</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">n_missing</span><span class="p">)),</span>
-</span><span id="flop_estimates-105"><a href="#flop_estimates-105"><span class="linenos">105</span></a>        <span class="s2">"spline"</span><span class="p">:</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">spline_window</span> <span class="o">+</span> <span class="n">gap_len</span><span class="p">)</span> <span class="o">+</span> <span class="n">n_missing</span> <span class="o">*</span> <span class="mi">15</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="n">n_gaps</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">spline_window</span> <span class="o">+</span> <span class="n">gap_len</span><span class="p">)),</span>
-</span><span id="flop_estimates-106"><a href="#flop_estimates-106"><span class="linenos">106</span></a>        <span class="s2">"svd"</span><span class="p">:</span> <span class="p">(</span><span class="n">svd_iters</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span> <span class="n">svd_iters</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
-</span><span id="flop_estimates-107"><a href="#flop_estimates-107"><span class="linenos">107</span></a>        <span class="s2">"sor"</span><span class="p">:</span> <span class="p">(</span><span class="n">sor_iters</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">,</span> <span class="n">sor_iters</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">),</span>
-</span><span id="flop_estimates-108"><a href="#flop_estimates-108"><span class="linenos">108</span></a>    <span class="p">}</span>
-</span><span id="flop_estimates-109"><a href="#flop_estimates-109"><span class="linenos">109</span></a>    <span class="k">return</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="p">{</span><span class="s2">"flops"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">),</span> <span class="s2">"bytes"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">b</span><span class="p">),</span> <span class="s2">"intensity"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span> <span class="o">/</span> <span class="n">b</span><span class="p">)}</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="ow">in</span> <span class="n">est</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="flop_estimates-113"><a href="#flop_estimates-113"><span class="linenos">113</span></a><span class="k">def</span><span class="w"> </span><span class="nf">flop_estimates</span><span class="p">(</span><span class="n">n_missing</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">n_total</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">gap_len</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">k_newton</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">spline_window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">36</span><span class="p">,</span>
+</span><span id="flop_estimates-114"><a href="#flop_estimates-114"><span class="linenos">114</span></a>                   <span class="n">svd_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">144</span><span class="p">),</span> <span class="n">svd_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">sor_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+</span><span id="flop_estimates-115"><a href="#flop_estimates-115"><span class="linenos">115</span></a><span class="w">    </span><span class="sd">"""Analytical FLOP and memory-traffic estimates per method.</span>
+</span><span id="flop_estimates-116"><a href="#flop_estimates-116"><span class="linenos">116</span></a>
+</span><span id="flop_estimates-117"><a href="#flop_estimates-117"><span class="linenos">117</span></a><span class="sd">    Counts are leading-order (constants matter less than scaling). Bytes</span>
+</span><span id="flop_estimates-118"><a href="#flop_estimates-118"><span class="linenos">118</span></a><span class="sd">    assume float64 values read/written once per pass (8 B each).</span>
+</span><span id="flop_estimates-119"><a href="#flop_estimates-119"><span class="linenos">119</span></a>
+</span><span id="flop_estimates-120"><a href="#flop_estimates-120"><span class="linenos">120</span></a><span class="sd">    Args:</span>
+</span><span id="flop_estimates-121"><a href="#flop_estimates-121"><span class="linenos">121</span></a><span class="sd">        n_missing: Number of missing points.</span>
+</span><span id="flop_estimates-122"><a href="#flop_estimates-122"><span class="linenos">122</span></a><span class="sd">        n_total: Series length.</span>
+</span><span id="flop_estimates-123"><a href="#flop_estimates-123"><span class="linenos">123</span></a><span class="sd">        gap_len: Typical gap length.</span>
+</span><span id="flop_estimates-124"><a href="#flop_estimates-124"><span class="linenos">124</span></a><span class="sd">        k_newton: Points per side for Newton.</span>
+</span><span id="flop_estimates-125"><a href="#flop_estimates-125"><span class="linenos">125</span></a><span class="sd">        spline_window: Local spline half-window.</span>
+</span><span id="flop_estimates-126"><a href="#flop_estimates-126"><span class="linenos">126</span></a><span class="sd">        svd_shape: ``(days, steps_per_day)`` of the folded matrix.</span>
+</span><span id="flop_estimates-127"><a href="#flop_estimates-127"><span class="linenos">127</span></a><span class="sd">        svd_iters: Hard-impute iterations.</span>
+</span><span id="flop_estimates-128"><a href="#flop_estimates-128"><span class="linenos">128</span></a><span class="sd">        sor_iters: SOR sweeps.</span>
+</span><span id="flop_estimates-129"><a href="#flop_estimates-129"><span class="linenos">129</span></a>
+</span><span id="flop_estimates-130"><a href="#flop_estimates-130"><span class="linenos">130</span></a><span class="sd">    Returns:</span>
+</span><span id="flop_estimates-131"><a href="#flop_estimates-131"><span class="linenos">131</span></a><span class="sd">        ``{method: {"flops": F, "bytes": B, "intensity": F/B}}`` for</span>
+</span><span id="flop_estimates-132"><a href="#flop_estimates-132"><span class="linenos">132</span></a><span class="sd">        ``linear``, ``newton``, ``spline``, ``svd`` and ``sor``.</span>
+</span><span id="flop_estimates-133"><a href="#flop_estimates-133"><span class="linenos">133</span></a>
+</span><span id="flop_estimates-134"><a href="#flop_estimates-134"><span class="linenos">134</span></a><span class="sd">    Example:</span>
+</span><span id="flop_estimates-135"><a href="#flop_estimates-135"><span class="linenos">135</span></a><span class="sd">        &gt;&gt;&gt; est = flop_estimates(n_missing=600, n_total=10_000, gap_len=6)</span>
+</span><span id="flop_estimates-136"><a href="#flop_estimates-136"><span class="linenos">136</span></a><span class="sd">        &gt;&gt;&gt; est["linear"]["intensity"]  # 3 flops per 24 bytes: memory bound</span>
+</span><span id="flop_estimates-137"><a href="#flop_estimates-137"><span class="linenos">137</span></a><span class="sd">        0.125</span>
+</span><span id="flop_estimates-138"><a href="#flop_estimates-138"><span class="linenos">138</span></a><span class="sd">    """</span>
+</span><span id="flop_estimates-139"><a href="#flop_estimates-139"><span class="linenos">139</span></a>    <span class="n">n_gaps</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_missing</span> <span class="o">//</span> <span class="nb">max</span><span class="p">(</span><span class="n">gap_len</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+</span><span id="flop_estimates-140"><a href="#flop_estimates-140"><span class="linenos">140</span></a>    <span class="n">m</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">k_newton</span>
+</span><span id="flop_estimates-141"><a href="#flop_estimates-141"><span class="linenos">141</span></a>    <span class="n">est</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="flop_estimates-142"><a href="#flop_estimates-142"><span class="linenos">142</span></a>        <span class="s2">"linear"</span><span class="p">:</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">),</span>
+</span><span id="flop_estimates-143"><a href="#flop_estimates-143"><span class="linenos">143</span></a>        <span class="s2">"newton"</span><span class="p">:</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.5</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="n">m</span><span class="p">)</span> <span class="o">+</span> <span class="n">n_missing</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">m</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">n_missing</span><span class="p">)),</span>
+</span><span id="flop_estimates-144"><a href="#flop_estimates-144"><span class="linenos">144</span></a>        <span class="s2">"spline"</span><span class="p">:</span> <span class="p">(</span><span class="n">n_gaps</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">spline_window</span> <span class="o">+</span> <span class="n">gap_len</span><span class="p">)</span> <span class="o">+</span> <span class="n">n_missing</span> <span class="o">*</span> <span class="mi">15</span><span class="p">,</span> <span class="mi">8</span> <span class="o">*</span> <span class="n">n_gaps</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">spline_window</span> <span class="o">+</span> <span class="n">gap_len</span><span class="p">)),</span>
+</span><span id="flop_estimates-145"><a href="#flop_estimates-145"><span class="linenos">145</span></a>        <span class="s2">"svd"</span><span class="p">:</span> <span class="p">(</span><span class="n">svd_iters</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span> <span class="n">svd_iters</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">svd_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+</span><span id="flop_estimates-146"><a href="#flop_estimates-146"><span class="linenos">146</span></a>        <span class="s2">"sor"</span><span class="p">:</span> <span class="p">(</span><span class="n">sor_iters</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">,</span> <span class="n">sor_iters</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_missing</span><span class="p">),</span>
+</span><span id="flop_estimates-147"><a href="#flop_estimates-147"><span class="linenos">147</span></a>    <span class="p">}</span>
+</span><span id="flop_estimates-148"><a href="#flop_estimates-148"><span class="linenos">148</span></a>    <span class="k">return</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="p">{</span><span class="s2">"flops"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="p">),</span> <span class="s2">"bytes"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">b</span><span class="p">),</span> <span class="s2">"intensity"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f</span> <span class="o">/</span> <span class="n">b</span><span class="p">)}</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="ow">in</span> <span class="n">est</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 </span></pre></div>
 
 
@@ -498,7 +636,19 @@ assume float64 values read/written once per pass (8 B each).</p>
 <h6 id="returns">Returns:</h6>
 
 <blockquote>
-  <p><code>{method: {"flops": F, "bytes": B, "intensity": F/B}}</code>.</p>
+  <p><code>{method: {"flops": F, "bytes": B, "intensity": F/B}}</code> for
+  <code>linear</code>, <code>newton</code>, <code>spline</code>, <code>svd</code> and <code>sor</code>.</p>
+</blockquote>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">est</span> <span class="o">=</span> <span class="n">flop_estimates</span><span class="p">(</span><span class="n">n_missing</span><span class="o">=</span><span class="mi">600</span><span class="p">,</span> <span class="n">n_total</span><span class="o">=</span><span class="mi">10_000</span><span class="p">,</span> <span class="n">gap_len</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">est</span><span class="p">[</span><span class="s2">"linear"</span><span class="p">][</span><span class="s2">"intensity"</span><span class="p">]</span>  <span class="c1"># 3 flops per 24 bytes: memory bound</span>
+<span class="go">0.125</span>
+</code></pre>
+  </div>
 </blockquote>
 </div>
 
@@ -515,15 +665,22 @@ assume float64 values read/written once per pass (8 B each).</p>
 
     </div>
     <a class="headerlink" href="#roofline"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="roofline-112"><a href="#roofline-112"><span class="linenos">112</span></a><span class="k">def</span><span class="w"> </span><span class="nf">roofline</span><span class="p">(</span><span class="n">intensity</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">peak_gflops</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">bandwidth_gbs</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="roofline-113"><a href="#roofline-113"><span class="linenos">113</span></a><span class="w">    </span><span class="sd">"""Attainable performance ``min(peak, intensity * bandwidth)`` in GFLOP/s.</span>
-</span><span id="roofline-114"><a href="#roofline-114"><span class="linenos">114</span></a>
-</span><span id="roofline-115"><a href="#roofline-115"><span class="linenos">115</span></a><span class="sd">    Args:</span>
-</span><span id="roofline-116"><a href="#roofline-116"><span class="linenos">116</span></a><span class="sd">        intensity: Arithmetic intensity [FLOP/byte].</span>
-</span><span id="roofline-117"><a href="#roofline-117"><span class="linenos">117</span></a><span class="sd">        peak_gflops: Peak compute of the device [GFLOP/s].</span>
-</span><span id="roofline-118"><a href="#roofline-118"><span class="linenos">118</span></a><span class="sd">        bandwidth_gbs: Memory bandwidth [GB/s].</span>
-</span><span id="roofline-119"><a href="#roofline-119"><span class="linenos">119</span></a><span class="sd">    """</span>
-</span><span id="roofline-120"><a href="#roofline-120"><span class="linenos">120</span></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">peak_gflops</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">intensity</span><span class="p">)</span> <span class="o">*</span> <span class="n">bandwidth_gbs</span><span class="p">)</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="roofline-151"><a href="#roofline-151"><span class="linenos">151</span></a><span class="k">def</span><span class="w"> </span><span class="nf">roofline</span><span class="p">(</span><span class="n">intensity</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">peak_gflops</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">bandwidth_gbs</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="roofline-152"><a href="#roofline-152"><span class="linenos">152</span></a><span class="w">    </span><span class="sd">"""Attainable performance ``min(peak, intensity * bandwidth)`` in GFLOP/s.</span>
+</span><span id="roofline-153"><a href="#roofline-153"><span class="linenos">153</span></a>
+</span><span id="roofline-154"><a href="#roofline-154"><span class="linenos">154</span></a><span class="sd">    Args:</span>
+</span><span id="roofline-155"><a href="#roofline-155"><span class="linenos">155</span></a><span class="sd">        intensity: Arithmetic intensity [FLOP/byte].</span>
+</span><span id="roofline-156"><a href="#roofline-156"><span class="linenos">156</span></a><span class="sd">        peak_gflops: Peak compute of the device [GFLOP/s].</span>
+</span><span id="roofline-157"><a href="#roofline-157"><span class="linenos">157</span></a><span class="sd">        bandwidth_gbs: Memory bandwidth [GB/s].</span>
+</span><span id="roofline-158"><a href="#roofline-158"><span class="linenos">158</span></a>
+</span><span id="roofline-159"><a href="#roofline-159"><span class="linenos">159</span></a><span class="sd">    Returns:</span>
+</span><span id="roofline-160"><a href="#roofline-160"><span class="linenos">160</span></a><span class="sd">        Attainable GFLOP/s for each intensity.</span>
+</span><span id="roofline-161"><a href="#roofline-161"><span class="linenos">161</span></a>
+</span><span id="roofline-162"><a href="#roofline-162"><span class="linenos">162</span></a><span class="sd">    Example:</span>
+</span><span id="roofline-163"><a href="#roofline-163"><span class="linenos">163</span></a><span class="sd">        &gt;&gt;&gt; roofline([0.1, 100.0], peak_gflops=70.0, bandwidth_gbs=15.0)</span>
+</span><span id="roofline-164"><a href="#roofline-164"><span class="linenos">164</span></a><span class="sd">        array([ 1.5, 70. ])</span>
+</span><span id="roofline-165"><a href="#roofline-165"><span class="linenos">165</span></a><span class="sd">    """</span>
+</span><span id="roofline-166"><a href="#roofline-166"><span class="linenos">166</span></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">peak_gflops</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">intensity</span><span class="p">)</span> <span class="o">*</span> <span class="n">bandwidth_gbs</span><span class="p">)</span>
 </span></pre></div>
 
 
@@ -536,6 +693,22 @@ assume float64 values read/written once per pass (8 B each).</p>
 <li><strong>peak_gflops:</strong>  Peak compute of the device [GFLOP/s].</li>
 <li><strong>bandwidth_gbs:</strong>  Memory bandwidth [GB/s].</li>
 </ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>Attainable GFLOP/s for each intensity.</p>
+</blockquote>
+
+<h6 id="example">Example:</h6>
+
+<blockquote>
+  <div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">roofline</span><span class="p">([</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">100.0</span><span class="p">],</span> <span class="n">peak_gflops</span><span class="o">=</span><span class="mf">70.0</span><span class="p">,</span> <span class="n">bandwidth_gbs</span><span class="o">=</span><span class="mf">15.0</span><span class="p">)</span>
+<span class="go">array([ 1.5, 70. ])</span>
+</code></pre>
+  </div>
+</blockquote>
 </div>
 
 

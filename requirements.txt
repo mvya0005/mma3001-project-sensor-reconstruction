@@ -11,6 +11,7 @@ torch>=2.1          # notebook 05 and sensorfill.deep only
 pytest>=7
 pytest-html>=4
 pdoc>=14
+ruff>=0.5
 nbformat>=5
 nbclient>=0.8
 ipykernel

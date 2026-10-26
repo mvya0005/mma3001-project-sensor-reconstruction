@@ -6,6 +6,13 @@
 * :func:`fold_daily` / :func:`unfold_daily` - reshape a series into a
   ``days x steps_per_day`` matrix so that daily repetition becomes low rank.
 * :func:`svd_impute` - iterative truncated-SVD matrix completion.
+
+Example:
+    >>> import numpy as np
+    >>> from sensorfill.linalg import thomas_solve
+    >>> # [[2, 1, 0], [1, 2, 1], [0, 1, 2]] x = [3, 4, 3]  ->  x = [1, 1, 1]
+    >>> thomas_solve([0, 1, 1], [2, 2, 2], [1, 1, 0], [3, 4, 3])
+    array([1., 1., 1.])
 """
 
 from __future__ import annotations
@@ -32,6 +39,10 @@ def thomas_solve(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> 
 
     Raises:
         ZeroDivisionError: If a zero pivot is met (matrix not suitable).
+
+    Example:
+        >>> thomas_solve([0.0, 1.0], [4.0, 4.0], [1.0, 0.0], [5.0, 5.0])
+        array([1., 1.])
     """
     n = len(d)
     cp = np.empty(n)
@@ -68,6 +79,10 @@ def gauss_solve(A: np.ndarray, b: np.ndarray) -> np.ndarray:
 
     Raises:
         np.linalg.LinAlgError: If ``A`` is numerically singular.
+
+    Example:
+        >>> gauss_solve([[0.0, 1.0], [2.0, 0.0]], [3.0, 4.0])  # needs a row swap
+        array([2., 3.])
     """
     A = np.array(A, dtype=float)
     b = np.array(b, dtype=float)
@@ -99,6 +114,12 @@ def fold_daily(y: np.ndarray, steps_per_day: int, offset: int = 0) -> np.ndarray
 
     Returns:
         2-D array; row ``d`` is day ``d``, column ``j`` is time-of-day slot ``j``.
+
+    Example:
+        >>> fold_daily(np.arange(5.0), steps_per_day=2, offset=1)
+        array([[nan,  0.],
+               [ 1.,  2.],
+               [ 3.,  4.]])
     """
     y = np.asarray(y, dtype=float)
     pad_front = (steps_per_day - offset) % steps_per_day
@@ -109,7 +130,21 @@ def fold_daily(y: np.ndarray, steps_per_day: int, offset: int = 0) -> np.ndarray
 
 
 def unfold_daily(M: np.ndarray, n: int, offset: int = 0) -> np.ndarray:
-    """Inverse of :func:`fold_daily` for a series of original length ``n``."""
+    """Inverse of :func:`fold_daily`.
+
+    Args:
+        M: ``(days, steps_per_day)`` matrix from :func:`fold_daily`.
+        n: Length of the original series.
+        offset: The same ``offset`` that was passed to :func:`fold_daily`.
+
+    Returns:
+        1-D series of length ``n`` (a view of ``M`` where possible).
+
+    Example:
+        >>> y = np.arange(5.0)
+        >>> unfold_daily(fold_daily(y, 2, offset=1), 5, offset=1)
+        array([0., 1., 2., 3., 4.])
+    """
     spd = M.shape[1]
     pad_front = (spd - offset) % spd
     return M.reshape(-1)[pad_front : pad_front + n]
@@ -147,6 +182,13 @@ def svd_impute(
     Raises:
         ValueError: If ``rank`` is not in ``[1, min(M.shape)]`` or a column is
             entirely missing.
+
+    Example:
+        >>> base = np.outer([1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0])  # exactly rank 1
+        >>> M = base.copy()
+        >>> M[1, 2] = np.nan
+        >>> round(float(svd_impute(M, rank=1, max_iter=500, tol=1e-12)[1, 2]), 3)
+        6.0
     """
     M = np.asarray(M, dtype=float)
     if not 1 <= rank <= min(M.shape):
@@ -154,12 +196,15 @@ def svd_impute(
     miss = np.isnan(M)
     if miss.all(axis=0).any():
         raise ValueError("a column is entirely missing; SVD completion is undefined")
+    # Start from the time-of-day means: a sensible guess that SVD then refines.
     col_mean = np.nanmean(M, axis=0)
     X = np.where(miss, col_mean[None, :], M)
     history = []
     for _ in range(max_iter):
         U, s, Vt = np.linalg.svd(X, full_matrices=False)
         L = (U[:, :rank] * s[:rank]) @ Vt[:rank]
+        # Observed entries are data, not unknowns: only the gaps take the
+        # low-rank values, so the completion never alters a real reading.
         new = np.where(miss, L, M)
         num = np.linalg.norm((new - X)[miss])
         den = np.linalg.norm(X[miss]) + 1e-12
@@ -173,6 +218,17 @@ def svd_impute(
 
 
 def condition_number(A: np.ndarray) -> float:
-    """2-norm condition number ``sigma_max / sigma_min`` (inf if singular)."""
+    """2-norm condition number ``sigma_max / sigma_min``.
+
+    Args:
+        A: Matrix (any shape).
+
+    Returns:
+        The condition number, or ``inf`` if ``A`` is singular.
+
+    Example:
+        >>> condition_number(np.diag([10.0, 1.0]))
+        10.0
+    """
     s = np.linalg.svd(np.asarray(A, dtype=float), compute_uv=False)
     return float(s[0] / s[-1]) if s[-1] > 0 else float("inf")
