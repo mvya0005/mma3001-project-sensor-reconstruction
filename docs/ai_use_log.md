@@ -65,18 +65,12 @@ accepted.
    against the executed outputs, and several overstated claims were corrected
    (e.g. the ODE fill is not better than linear for gaps of 6 h or less).
 
-## 4. Student reflection (to be written by the student)
+## 4. Student reflection
 
-Prompts taken from the brief. Answer each in your own words:
+I used Anthropic’s Claude to aid me in completing this project. It had a high level of contribution as it wrote the code (the sensorfill package, the notebooks, tests and pushed them to the GitHub repository), all under my direction. It ran the analyses, presented their results, drafted this report and collated the references and appendices. Google Colab provided the T4 GPU that was used for training the neural networks. I used it because this project required several tools and skills which I was very unfamiliar with and the project took place over a very busy portion of the semester thus using the AI allowed me to make more use of the limited time I had to complete the project.
 
-- Which tools did you use, and what for? Roughly what share of the code and
-  text came from AI?
-- Why did you use AI for those tasks rather than doing them yourself?
-- How did you check the AI's output? Point to specific tests, plots or numbers
-  that you inspected.
-- Which important decisions did *you* make? For example: the choice of topic,
-  sensor and splits, accepting or rejecting a method, the final policy.
-- Which AI errors or limitations did you notice (see section 3), and which
-  ones did you catch yourself?
-- How did using AI change your understanding of the methods, and your
-  workflow? What would you do differently?
+I directed by choosing the project dataset, problem and required methods from across the unit’s teachings. I also chose to use Google Colab to test due to my laptop malfunctioning throughout the project. I conversed with the AI to explain my initial ideas and then use its knowledge to bring them to life while also understanding the engineering reasons as to why some of my ideas were correct while others were not. I reviewed and accepted each of Claude’s edits to the code.
+
+The outputs of the AI were checked using 87 automated tests which compared each numerical method against exact answers. I also looked at the figures and the fill plots. I raised any questions or uncertainties I had with its outputs and it often explained its working to me which I would then correct if I deemed it was doing something wrong.Throughout various stages of the project the AI averaged occupancy incorrectly and wrote some code that hid gaps but could now find any valid 3 hour block. It also wrote a recommendation before the test that was then disproved by said test. When it explained the code it claimed to flag long gaps however in reality it only filled them. These errors could be fixed by talking with the AI and making it understand its error or sometimes required manual investigation and mending.
+
+The use of Claude allowed me to produce a project that was significantly more complex than what I could have produced in the same time without it. It allowed me to implement ideas and features very quickly without necessarily needing to learn the coding methods to do so. However, it also supported my understanding as I was able to get Claude to explain each step, each system or reiterate something from the very start of the project upon request and in a form that was formatted for my preferred method of learning. As it could tailor its responses to me and my knowledge I was able to gain a lot from it as it explained the systems or their steps that I did not properly grasp. It improved the workflow significantly as I could direct Claude on what I wanted to implement and what outputs I wanted from it and then it would explain how it would be able to add it to the project and how it worked as well.
